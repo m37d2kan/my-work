@@ -845,7 +845,7 @@ if barstate.isconfirmed and signalTimeOK
             oshiBreakSignal1 := true
             if showBreakLabel1
                 label.new(bar_index, low - sigOffset1 - breakLabelOffset,
-                     "Break\nSW1押安\n" + str.tostring(oshiYasune1, "#.##"),
+                     (b1_trend_for_break1 == "DOWN" ? "Nブレイク\nSW1押安\n" : "Break\nSW1押安\n") + str.tostring(oshiYasune1, "#.##"),
                      style=label.style_none, textcolor=oshiBreakColor, size=size.normal)
                 // ── ブレイク縦ゾーン（ローソク1本幅・画面上下） ──
                 box.new(bar_index, close + atrValue * 50, bar_index + 1, close - atrValue * 50,
@@ -874,7 +874,7 @@ if barstate.isconfirmed and signalTimeOK
             modoriBreakSignal1 := true
             if showBreakLabel1
                 label.new(bar_index, high + sigOffset1 + breakLabelOffset,
-                     "Break\nSW1戻高\n" + str.tostring(modoriTakane1, "#.##"),
+                     (p1_trend_for_break1 == "UP" ? "Nブレイク\nSW1戻高\n" : "Break\nSW1戻高\n") + str.tostring(modoriTakane1, "#.##"),
                      style=label.style_none, textcolor=modoriBreakColor, size=size.normal)
                 // ── ブレイク縦ゾーン（ローソク1本幅・画面上下） ──
                 box.new(bar_index, close + atrValue * 50, bar_index + 1, close - atrValue * 50,
