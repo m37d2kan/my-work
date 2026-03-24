@@ -1,0 +1,448 @@
+//@version=5
+strategy("SwingFusion Strategy v4.2 - MA Slope Turn", overlay=true,
+     initial_capital=1000000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_order, commission_value=50,
+     slippage=5, pyramiding=0, calc_on_every_tick=false,
+     process_orders_on_close=true, close_entries_rule="ANY",
+     max_labels_count=500, max_lines_count=500)
+
+// ══════════════════════════════════════════════════════════════
+// ① スイング設定 (P&B)
+// ══════════════════════════════════════════════════════════════
+grpSwing = "① スイング設定"
+length1 = input.int(7,  "SW1 ルックバック", minval=1, group=grpSwing)
+length2 = input.int(28, "SW2 ルックバック", minval=1, group=grpSwing)
+showPB1 = input.bool(true, "P&B1 シグナル表示", group=grpSwing)
+showPB2 = input.bool(true, "P&B2 シグナル表示", group=grpSwing)
+
+// ══════════════════════════════════════════════════════════════
+// ② 移動平均線
+// ══════════════════════════════════════════════════════════════
+grpMA = "② 移動平均線"
+smaLen1 = input.int(20,  "短期MA期間", minval=1, group=grpMA)
+smaLen2 = input.int(80,  "中期MA期間", minval=1, group=grpMA)
+smaLen3 = input.int(200, "長期MA期間", minval=1, group=grpMA)
+
+sma1 = ta.sma(close, smaLen1)
+sma2 = ta.sma(close, smaLen2)
+sma3 = ta.sma(close, smaLen3)
+
+// ══════════════════════════════════════════════════════════════
+// ③ MA傾斜・NO TRADE設定
+// ══════════════════════════════════════════════════════════════
+grpSlope = "③ MA傾斜・NO TRADE設定"
+slopeLen = input.int(3, "傾斜算出バー数", minval=1, maxval=20, group=grpSlope)
+
+// NO TRADE ZONE: MA密集度ベース
+noTradeMode = input.string("MA間隔", "NO TRADE判定方式",
+     options=["MA間隔", "80MAフラット", "両方", "なし"], group=grpSlope)
+maSpreadThreshold = input.float(1.0, "MA間隔閾値 (ATR倍率)", minval=0.1, maxval=5.0, step=0.1,
+     tooltip="20MAと80MAの距離がこの値以下ならNO TRADE ZONE", group=grpSlope)
+flatThreshold = input.float(0.3, "80MAフラット閾値", minval=0.05, maxval=2.0, step=0.05, group=grpSlope)
+
+// ══════════════════════════════════════════════════════════════
+// ④ エントリー設定
+// ══════════════════════════════════════════════════════════════
+grpEntry = "④ エントリー設定"
+entryTrigger = input.string("20MA傾斜転換", "エントリートリガー",
+     options=["20MA傾斜転換", "20MA傾斜転換 + P&B1確認", "20MA傾斜転換 + P&B待ち"], group=grpEntry)
+pbWaitBars = input.int(5, "P&B待ちバー数", minval=1, maxval=20, group=grpEntry)
+
+// 200MAフィルター
+sma3Filter = input.string("フィルターなし", "200MAフィルター",
+     options=["位置のみ", "位置+方向", "フィルターなし"], group=grpEntry)
+sma3Tolerance = input.float(2.0, "200MA付近の許容 (ATR倍率)", minval=0.5, maxval=5.0, step=0.5, group=grpEntry)
+
+// 初動フェーズ設定
+usePhaseTP = input.bool(true, "初動フェーズで80MA利確を使う", group=grpEntry)
+
+// ══════════════════════════════════════════════════════════════
+// ⑤ エグジット設定
+// ══════════════════════════════════════════════════════════════
+grpExit = "⑤ エグジット設定"
+atrPeriod       = input.int(14, "ATR期間", minval=1, group=grpExit)
+slMode          = input.string("SW1レベル", "損切りモード",
+     options=["ATR固定", "SW1レベル"], group=grpExit)
+slMultiplier    = input.float(1.5, "ATR固定SL (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+swingSLPadding  = input.float(0.3, "SL余裕 (ATR倍率)", minval=0.0, maxval=2.0, step=0.1, group=grpExit)
+slMaxATR        = input.float(3.0, "SL上限 (ATR倍率)", minval=1.0, maxval=10.0, step=0.5, group=grpExit)
+tpMultiplier    = input.float(3.0, "利確 (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+useTrailing     = input.bool(false, "トレーリングストップ", group=grpExit)
+trailMultiplier = input.float(2.0, "トレーリング (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+exitOnSlopeTurn = input.bool(true, "20MA傾斜逆転で決済", group=grpExit)
+exitOnPBReverse = input.bool(false, "SW1逆波動で決済", group=grpExit)
+
+// ══════════════════════════════════════════════════════════════
+// ⑥ 時間フィルター
+// ══════════════════════════════════════════════════════════════
+grpTime = "⑥ 時間フィルター"
+useTimeFilter     = input.bool(true, "時間制限 ON/OFF", group=grpTime)
+startHour         = input.int(8,  "開始（時）", minval=0, maxval=23, group=grpTime)
+startMin          = input.int(45, "開始（分）", minval=0, maxval=59, group=grpTime)
+endHour           = input.int(15, "終了（時）", minval=0, maxval=23, group=grpTime)
+endMin            = input.int(30, "終了（分）", minval=0, maxval=59, group=grpTime)
+closeAtSessionEnd = input.bool(true, "セッション終了時に全決済", group=grpTime)
+useOpenFilter     = input.bool(true, "寄付き除外 ON/OFF", group=grpTime)
+openExcludeMin    = input.int(15, "寄付き除外（分）", minval=5, maxval=60, step=5, group=grpTime)
+
+// ══════════════════════════════════════════════════════════════
+// 計算
+// ══════════════════════════════════════════════════════════════
+atrValue = ta.atr(atrPeriod)
+
+float slope1 = sma1 - sma1[slopeLen]
+float slope2 = sma2 - sma2[slopeLen]
+float slope3 = sma3 - sma3[slopeLen]
+
+bool sma1Up = slope1 > 0
+bool sma1Dn = slope1 < 0
+bool sma2Up = slope2 > 0
+bool sma2Dn = slope2 < 0
+bool sma3Up = slope3 > 0
+bool sma3Dn = slope3 < 0
+
+// ── 20MA傾斜転換 ──
+bool sma1TurnUp = sma1Up and not sma1Up[1]
+bool sma1TurnDn = sma1Dn and not sma1Dn[1]
+
+// ══════════════════════════════════════════════════════════════
+// NO TRADE ZONE判定
+// ══════════════════════════════════════════════════════════════
+// MA間隔: 20MAと80MAの距離
+float maSpread = atrValue > 0 ? math.abs(sma1 - sma2) / atrValue : 0
+bool isMACrowded = maSpread < maSpreadThreshold
+
+// 80MAフラット
+float slopeNorm2 = atrValue > 0 ? math.abs(slope2) / atrValue * 100 : 0
+bool isFlat80 = slopeNorm2 < flatThreshold
+
+// NO TRADE判定
+bool isNoTrade = false
+if noTradeMode == "MA間隔"
+    isNoTrade := isMACrowded
+else if noTradeMode == "80MAフラット"
+    isNoTrade := isFlat80
+else if noTradeMode == "両方"
+    isNoTrade := isMACrowded or isFlat80
+// "なし" → false
+
+// ── MA色 ──
+color col1 = sma1Up ? color.green : color.red
+color col2 = isNoTrade and noTradeMode != "なし" ? color.gray : (sma2Up ? color.blue : color.red)
+color col3 = sma3Up ? color.purple : color.red
+
+plot(sma1, "20MA", col1, 2)
+plot(sma2, "80MA", col2, 2)
+plot(sma3, "200MA", col3, 2)
+
+// ══════════════════════════════════════════════════════════════
+// フェーズ判定（表示用）
+// ══════════════════════════════════════════════════════════════
+bool accelBuy  = sma1Up and sma2Up
+bool accelSell = sma1Dn and sma2Dn
+bool earlyBuy  = sma1Up and not sma2Up
+bool earlySell = sma1Dn and not sma2Dn
+
+var int phase = 0
+if isNoTrade
+    phase := 0
+else if accelBuy or accelSell
+    phase := 2
+else if earlyBuy or earlySell
+    phase := 1
+else
+    phase := 0
+
+// ══════════════════════════════════════════════════════════════
+// P&B ロジック
+// ══════════════════════════════════════════════════════════════
+var string lastPB1 = na
+var string lastPB2 = na
+
+bool peakCond1   = low < ta.lowest(low, length1)[1] and lastPB1 != "peak"
+bool botCond1    = high > ta.highest(high, length1)[1] and lastPB1 != "bottom"
+bool peakCond2   = low < ta.lowest(low, length2)[1] and lastPB2 != "peak"
+bool botCond2    = high > ta.highest(high, length2)[1] and lastPB2 != "bottom"
+
+var string pbState1 = "---"
+var string pbState2 = "---"
+
+if peakCond1
+    lastPB1  := "peak"
+    pbState1 := "下落波動"
+if botCond1
+    lastPB1  := "bottom"
+    pbState1 := "上昇波動"
+if peakCond2
+    lastPB2  := "peak"
+    pbState2 := "下落波動"
+if botCond2
+    lastPB2  := "bottom"
+    pbState2 := "上昇波動"
+
+float atrOff1 = atrValue * 0.5
+float atrOff2 = atrValue * 0.8
+plotshape(showPB1 and peakCond1 ? high + atrOff1 : na, "SW1 Peak", shape.triangledown, location.absolute, color.new(color.orange, 20), size=size.tiny)
+plotshape(showPB1 and botCond1 ? low - atrOff1 : na, "SW1 Bot", shape.triangleup, location.absolute, color.new(color.teal, 20), size=size.tiny)
+plotshape(showPB2 and peakCond2 ? high + atrOff2 : na, "SW2 Peak", shape.diamond, location.absolute, color.new(color.purple, 20), size=size.tiny)
+plotshape(showPB2 and botCond2 ? low - atrOff2 : na, "SW2 Bot", shape.diamond, location.absolute, color.new(color.teal, 20), size=size.tiny)
+
+// ══════════════════════════════════════════════════════════════
+// SW1 スイングポイント記録（SL用）
+// ══════════════════════════════════════════════════════════════
+var float prevPeak1 = na, var float prevBot1 = na
+var bool findMin1 = true, var bool findMax1 = false
+var float minP1 = na, var float maxP1 = na
+
+if barstate.isconfirmed
+    if findMin1 and (na(minP1) or low < minP1)
+        minP1 := low
+    if findMax1 and (na(maxP1) or high > maxP1)
+        maxP1 := high
+
+    if findMax1 and low < ta.lowest(low, length1)[1]
+        prevPeak1 := maxP1
+        findMax1 := false
+        findMin1 := true
+        minP1 := low
+
+    if findMin1 and high > ta.highest(high, length1)[1]
+        prevBot1 := minP1
+        findMin1 := false
+        findMax1 := true
+        maxP1 := high
+
+// ══════════════════════════════════════════════════════════════
+// P&B待ちモード用
+// ══════════════════════════════════════════════════════════════
+var int turnUpBar = na
+var int turnDnBar = na
+
+if sma1TurnUp
+    turnUpBar := bar_index
+if sma1TurnDn
+    turnDnBar := bar_index
+
+bool pbAfterTurnUp = not na(turnUpBar) and botCond1 and (bar_index - turnUpBar) <= pbWaitBars
+bool pbAfterTurnDn = not na(turnDnBar) and peakCond1 and (bar_index - turnDnBar) <= pbWaitBars
+
+// ══════════════════════════════════════════════════════════════
+// 200MAフィルター
+// ══════════════════════════════════════════════════════════════
+bool near200 = math.abs(close - sma3) < atrValue * sma3Tolerance
+
+bool sma3BuyOK = false
+bool sma3SellOK = false
+if sma3Filter == "位置のみ"
+    sma3BuyOK  := close > sma3 or near200
+    sma3SellOK := close < sma3 or near200
+else if sma3Filter == "位置+方向"
+    sma3BuyOK  := (close > sma3 or near200) and sma3Up
+    sma3SellOK := (close < sma3 or near200) and sma3Dn
+else
+    sma3BuyOK  := true
+    sma3SellOK := true
+
+// ══════════════════════════════════════════════════════════════
+// 時間フィルター
+// ══════════════════════════════════════════════════════════════
+f_inSignalTime() =>
+    if not useTimeFilter
+        true
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int startM  = startHour * 60 + startMin
+        int endM    = endHour * 60 + endMin
+        bool inSession = startM <= endM ? (current >= startM and current < endM) : (current >= startM or current < endM)
+        bool afterOpen = not useOpenFilter or (current >= startM + openExcludeMin)
+        inSession and afterOpen
+
+f_isSessionEnd() =>
+    if not closeAtSessionEnd or not useTimeFilter
+        false
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int endM    = endHour * 60 + endMin
+        current >= endM - 5 and current < endM + 5
+
+// ══════════════════════════════════════════════════════════════
+// エントリー条件
+// ══════════════════════════════════════════════════════════════
+bool timeOK = f_inSignalTime()
+bool entryBuy  = false
+bool entrySell = false
+
+// ドテン対応: ポジション保有中でも逆方向の転換シグナルでエントリー可能
+bool canBuy  = strategy.position_size <= 0  // ノーポジ or ショート保有中
+bool canSell = strategy.position_size >= 0  // ノーポジ or ロング保有中
+
+if barstate.isconfirmed and timeOK and not isNoTrade
+    // ── 買いトリガー ──
+    bool buyTrig = false
+    if entryTrigger == "20MA傾斜転換"
+        buyTrig := sma1TurnUp
+    else if entryTrigger == "20MA傾斜転換 + P&B1確認"
+        buyTrig := sma1TurnUp and pbState1 == "上昇波動"
+    else if entryTrigger == "20MA傾斜転換 + P&B待ち"
+        buyTrig := sma1TurnUp or pbAfterTurnUp
+
+    if buyTrig and sma3BuyOK and canBuy
+        entryBuy := true
+
+    // ── 売りトリガー ──
+    bool sellTrig = false
+    if entryTrigger == "20MA傾斜転換"
+        sellTrig := sma1TurnDn
+    else if entryTrigger == "20MA傾斜転換 + P&B1確認"
+        sellTrig := sma1TurnDn and pbState1 == "下落波動"
+    else if entryTrigger == "20MA傾斜転換 + P&B待ち"
+        sellTrig := sma1TurnDn or pbAfterTurnDn
+
+    if sellTrig and sma3SellOK and canSell
+        entrySell := true
+
+// ══════════════════════════════════════════════════════════════
+// エントリー・エグジット
+// ══════════════════════════════════════════════════════════════
+if entryBuy
+    float sl = na
+    if slMode == "SW1レベル" and not na(prevBot1)
+        sl := prevBot1 - atrValue * swingSLPadding
+    else
+        sl := close - atrValue * slMultiplier
+    sl := math.max(sl, close - atrValue * slMaxATR)
+
+    float tp = na
+    if usePhaseTP and earlyBuy and not na(sma2) and sma2 > close
+        tp := sma2  // 初動: 80MAまで
+    else
+        tp := close + atrValue * tpMultiplier
+
+    string lbl = earlyBuy ? "初動BUY" : accelBuy ? "加速BUY" : "BUY"
+    strategy.entry("Long", strategy.long, comment=lbl)
+    strategy.exit("Long TP/SL", "Long", stop=sl, limit=tp,
+         trail_points=useTrailing ? atrValue * trailMultiplier : na,
+         trail_offset=useTrailing ? atrValue * 1.0 : na)
+
+if entrySell
+    float sl = na
+    if slMode == "SW1レベル" and not na(prevPeak1)
+        sl := prevPeak1 + atrValue * swingSLPadding
+    else
+        sl := close + atrValue * slMultiplier
+    sl := math.min(sl, close + atrValue * slMaxATR)
+
+    float tp = na
+    if usePhaseTP and earlySell and not na(sma2) and sma2 < close
+        tp := sma2  // 初動: 80MAまで
+    else
+        tp := close - atrValue * tpMultiplier
+
+    string lbl = earlySell ? "初動SELL" : accelSell ? "加速SELL" : "SELL"
+    strategy.entry("Short", strategy.short, comment=lbl)
+    strategy.exit("Short TP/SL", "Short", stop=sl, limit=tp,
+         trail_points=useTrailing ? atrValue * trailMultiplier : na,
+         trail_offset=useTrailing ? atrValue * 1.0 : na)
+
+// ── 20MA傾斜逆転で決済（ドテンしない場合のみ） ──
+if exitOnSlopeTurn and barstate.isconfirmed
+    if strategy.position_size > 0 and sma1TurnDn and not entrySell
+        strategy.close("Long", comment="20MA赤転")
+    if strategy.position_size < 0 and sma1TurnUp and not entryBuy
+        strategy.close("Short", comment="20MA緑転")
+
+// ── SW1逆波動で決済 ──
+if exitOnPBReverse and barstate.isconfirmed
+    if strategy.position_size > 0 and peakCond1
+        strategy.close("Long", comment="SW1逆転")
+    if strategy.position_size < 0 and botCond1
+        strategy.close("Short", comment="SW1逆転")
+
+// ── セッション終了 ──
+if f_isSessionEnd()
+    if strategy.position_size != 0
+        strategy.close_all(comment="セッション終了")
+
+// ══════════════════════════════════════════════════════════════
+// プロット
+// ══════════════════════════════════════════════════════════════
+plotshape(entryBuy, "BUY", shape.labelup, location.belowbar,
+     color.blue, size=size.normal, text="BUY")
+plotshape(entrySell, "SELL", shape.labeldown, location.abovebar,
+     color.red, size=size.normal, text="SELL")
+
+// 転換マーク（フィルターで除外されたもの）
+plotshape(sma1TurnUp and not entryBuy ? low - atrValue * 0.5 : na, "Turn Up (skip)",
+     shape.arrowup, location.absolute, color.new(color.blue, 75), size=size.tiny)
+plotshape(sma1TurnDn and not entrySell ? high + atrValue * 0.5 : na, "Turn Dn (skip)",
+     shape.arrowdown, location.absolute, color.new(color.red, 75), size=size.tiny)
+
+// NO TRADE ZONE背景
+bgcolor(isNoTrade ? color.new(color.gray, 92) : na, title="NO TRADE ZONE")
+
+// フェーズ背景色（NO TRADE以外）
+color phaseBG = na
+if not isNoTrade
+    if phase == 1
+        phaseBG := earlyBuy ? color.new(color.blue, 96) : earlySell ? color.new(color.red, 96) : na
+    else if phase == 2
+        phaseBG := accelBuy ? color.new(color.blue, 93) : accelSell ? color.new(color.red, 93) : na
+bgcolor(phaseBG, title="フェーズ")
+
+// ══════════════════════════════════════════════════════════════
+// テーブル
+// ══════════════════════════════════════════════════════════════
+var table tb = table.new(position.bottom_right, 6, 4, border_width=1)
+
+if barstate.islast
+    table.cell(tb, 0, 0, "", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 0, "傾斜", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 0, "位置", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 3, 0, "MA間隔", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 4, 0, "状態", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 5, 0, "波動", bgcolor=#333333, text_color=color.white, text_size=size.small)
+
+    // 20MA
+    table.cell(tb, 0, 1, "20MA", bgcolor=#1E50B4, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 1, sma1Up ? "↑" : "↓", bgcolor=sma1Up ? #009600 : #C80000, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 1, close > sma1 ? "上" : "下", bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(tb, 3, 1, str.tostring(maSpread, "#.#") + "ATR", bgcolor=isMACrowded ? #884400 : #464646, text_color=color.white, text_size=size.small)
+    // NO TRADE / フェーズ
+    string stateT = isNoTrade ? "NO TRADE" : (phase == 1 ? "初動" : phase == 2 ? "加速" : "---")
+    color stateC = isNoTrade ? #884400 : (phase == 1 ? #B8860B : phase == 2 ? #006400 : #646464)
+    table.cell(tb, 4, 1, stateT, bgcolor=stateC, text_color=color.white, text_size=size.small)
+    table.cell(tb, 5, 1, pbState1, bgcolor=pbState1 == "上昇波動" ? #009600 : #C80000, text_color=color.white, text_size=size.small)
+
+    // 80MA
+    table.cell(tb, 0, 2, "80MA", bgcolor=#823282, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 2, sma2Up ? "↑" : "↓", bgcolor=sma2Up ? #0000C8 : #C80000, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 2, close > sma2 ? "上" : "下", bgcolor=#464646, text_color=color.white, text_size=size.small)
+    float d2 = atrValue > 0 ? (close - sma2) / atrValue : 0
+    table.cell(tb, 3, 2, str.tostring(d2, "#.#"), bgcolor=#464646, text_color=color.white, text_size=size.small)
+    // 方向表示
+    string dirT = accelBuy ? "BUY加速" : accelSell ? "SELL加速" : earlyBuy ? "BUY初動" : earlySell ? "SELL初動" : "---"
+    color dirC = accelBuy or earlyBuy ? #006400 : accelSell or earlySell ? #960000 : #646464
+    table.cell(tb, 4, 2, dirT, bgcolor=dirC, text_color=color.white, text_size=size.small)
+    table.cell(tb, 5, 2, pbState2, bgcolor=pbState2 == "上昇波動" ? #009600 : #C80000, text_color=color.white, text_size=size.small)
+
+    // 200MA
+    table.cell(tb, 0, 3, "200MA", bgcolor=#505050, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 3, sma3Up ? "↑" : "↓", bgcolor=sma3Up ? #800080 : #C80000, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 3, close > sma3 ? "上" : "下", bgcolor=#464646, text_color=color.white, text_size=size.small)
+    float d3 = atrValue > 0 ? (close - sma3) / atrValue : 0
+    table.cell(tb, 3, 3, str.tostring(d3, "#.#"), bgcolor=#464646, text_color=color.white, text_size=size.small)
+    string posT = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    color posC = strategy.position_size > 0 ? #0064C8 : strategy.position_size < 0 ? #C83232 : #646464
+    table.cell(tb, 4, 3, posT, bgcolor=posC, text_color=color.white, text_size=size.small)
+    string pnl = strategy.position_size != 0 ? str.tostring(strategy.openprofit, "#") : "---"
+    table.cell(tb, 5, 3, pnl, bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+// ══════════════════════════════════════════════════════════════
+// アラート
+// ══════════════════════════════════════════════════════════════
+alertcondition(entryBuy,  title="v4.2 BUY",  message="MA Slope Turn BUY - {{ticker}} @ {{close}}")
+alertcondition(entrySell, title="v4.2 SELL", message="MA Slope Turn SELL - {{ticker}} @ {{close}}")

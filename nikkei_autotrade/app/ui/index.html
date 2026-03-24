@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Nikkei225 Auto Dashboard</title>
+  <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+
+<!-- ヘッダー -->
+<div class="header">
+  <div class="header-left">
+    <h1>NK225 AUTO DASHBOARD</h1>
+    <div class="status-badges">
+      <span id="badge-api" class="badge badge-ng">API: ---</span>
+      <span id="badge-push" class="badge badge-ng">PUSH: ---</span>
+      <span id="badge-auto" class="badge badge-info">AUTO: OFF</span>
+      <span id="badge-estop" class="badge" style="display:none">EMERGENCY STOP</span>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="btn-success" onclick="post('/api/control/auto-on')">AUTO ON</button>
+    <button onclick="post('/api/control/auto-off')">AUTO OFF</button>
+    <button onclick="post('/api/control/cancel-all')">CANCEL ALL</button>
+    <button class="btn-danger" onclick="post('/api/control/emergency-stop')">EMERGENCY STOP</button>
+    <button onclick="post('/api/control/recover')">RECOVER</button>
+  </div>
+</div>
+
+<!-- ギャップ警告バナー -->
+<div id="gap-banner" class="gap-banner" style="display:none"></div>
+
+<!-- メインレイアウト -->
+<div class="layout">
+
+  <!-- 左上: チャート -->
+  <div class="panel chart-panel">
+    <h3>5min Chart</h3>
+    <div id="chart-container">
+      <canvas id="chart-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- 右上: 戦略パネル -->
+  <div class="panel strategy-panel">
+    <h3>Strategy</h3>
+
+    <div class="info-grid">
+      <span class="info-label">Price</span>
+      <span class="info-value" id="val-price">---</span>
+
+      <span class="info-label">Trend</span>
+      <span class="info-value" id="val-trend">---</span>
+
+      <span class="info-label">P&B State</span>
+      <span class="info-value" id="val-pbstate">---</span>
+
+      <span class="info-label">MA</span>
+      <span class="info-value" id="val-ma">---</span>
+
+      <span class="info-label">ATR(14)</span>
+      <span class="info-value" id="val-atr">---</span>
+
+      <span class="info-label">MA乖離OK</span>
+      <span class="info-value" id="val-maok">---</span>
+
+      <span class="info-label">時間OK</span>
+      <span class="info-value" id="val-timeok">---</span>
+    </div>
+
+    <h3>Levels</h3>
+    <div class="info-grid">
+      <span class="info-label">prevPeak1</span>
+      <span class="info-value" id="val-prevpeak">---</span>
+
+      <span class="info-label">prevBot1</span>
+      <span class="info-value" id="val-prevbot">---</span>
+
+      <span class="info-label">戻り高値</span>
+      <span class="info-value buy" id="val-modori">---</span>
+
+      <span class="info-label">押し安値</span>
+      <span class="info-value sell" id="val-oshi">---</span>
+
+      <span class="info-label">peakFalling</span>
+      <span class="info-value" id="val-peakfall">---</span>
+
+      <span class="info-label">botRising</span>
+      <span class="info-value" id="val-botrise">---</span>
+    </div>
+
+    <h3>Setup</h3>
+    <div id="setup-buy" class="setup-box">
+      <div class="setup-title" style="color:#34d399">BUY SETUP</div>
+      <div class="info-grid">
+        <span class="info-label">Active</span>
+        <span class="info-value" id="val-buyactive">---</span>
+        <span class="info-label">Stop Price</span>
+        <span class="info-value" id="val-buyprice">---</span>
+        <span class="info-label">Order</span>
+        <span class="info-value" id="val-buyorder">---</span>
+      </div>
+    </div>
+
+    <div id="setup-sell" class="setup-box">
+      <div class="setup-title" style="color:#f87171">SELL SETUP</div>
+      <div class="info-grid">
+        <span class="info-label">Active</span>
+        <span class="info-value" id="val-sellactive">---</span>
+        <span class="info-label">Stop Price</span>
+        <span class="info-value" id="val-sellprice">---</span>
+        <span class="info-label">Order</span>
+        <span class="info-value" id="val-sellorder">---</span>
+      </div>
+    </div>
+
+    <h3>Position</h3>
+    <div id="position-box" class="position-info">
+      <span id="val-posside" class="pos-side">NONE</span>
+      <span id="val-posentry">---</span>
+      <span id="val-possl">---</span>
+      <span id="val-postp">---</span>
+      <span id="val-pospnl" class="pnl-value">---</span>
+      <span id="val-be" class="be-status"></span>
+    </div>
+
+    <h3>Risk</h3>
+    <div class="info-grid">
+      <span class="info-label">Daily P&L</span>
+      <span class="info-value" id="val-dailypnl">---</span>
+      <span class="info-label">Consecutive Losses</span>
+      <span class="info-value" id="val-conloss">---</span>
+    </div>
+  </div>
+
+  <!-- 左下: 注文パネル -->
+  <div class="panel order-panel">
+    <h3>Orders &amp; Position</h3>
+    <div id="order-summary"></div>
+  </div>
+
+  <!-- 右下: ログ -->
+  <div class="panel log-panel">
+    <h3>Log</h3>
+    <div id="log-entries" class="log-entries"></div>
+  </div>
+
+</div>
+
+<script src="/ui/dashboard.js"></script>
+</body>
+</html>

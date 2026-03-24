@@ -1,0 +1,146 @@
+//@version=5
+indicator("MA Slope - Main Chart v2", overlay=true)
+// ═══════════════════════════════════════════════════
+//  MA設定
+// ═══════════════════════════════════════════════════
+grp1  = "━━ MA 1（最短）━━"
+on1   = input.bool(true,    "表示", group=grp1)
+tp1   = input.string("EMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp1)
+ln1   = input.int(5,        "Period", minval=1, group=grp1)
+sc1   = input.source(close, "Source", group=grp1)
+cu1   = input.color(color.lime,  "上向き色", group=grp1)
+cd1   = input.color(color.red,   "下向き色", group=grp1)
+cf1   = input.color(color.gray,  "フラット色", group=grp1)
+
+grp2  = "━━ MA 2 ━━"
+on2   = input.bool(true,    "表示", group=grp2)
+tp2   = input.string("EMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp2)
+ln2   = input.int(10,       "Period", minval=1, group=grp2)
+sc2   = input.source(close, "Source", group=grp2)
+cu2   = input.color(color.lime,  "上向き色", group=grp2)
+cd2   = input.color(color.red,   "下向き色", group=grp2)
+cf2   = input.color(color.gray,  "フラット色", group=grp2)
+
+grp3  = "━━ MA 3 ━━"
+on3   = input.bool(true,    "表示", group=grp3)
+tp3   = input.string("SMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp3)
+ln3   = input.int(20,       "Period", minval=1, group=grp3)
+sc3   = input.source(close, "Source", group=grp3)
+cu3   = input.color(color.lime,  "上向き色", group=grp3)
+cd3   = input.color(color.red,   "下向き色", group=grp3)
+cf3   = input.color(color.gray,  "フラット色", group=grp3)
+
+grp4  = "━━ MA 4 ━━"
+on4   = input.bool(true,    "表示", group=grp4)
+tp4   = input.string("SMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp4)
+ln4   = input.int(50,       "Period", minval=1, group=grp4)
+sc4   = input.source(close, "Source", group=grp4)
+cu4   = input.color(color.lime,  "上向き色", group=grp4)
+cd4   = input.color(color.red,   "下向き色", group=grp4)
+cf4   = input.color(color.gray,  "フラット色", group=grp4)
+
+grp5  = "━━ MA 5（最長）━━"
+on5   = input.bool(true,    "表示", group=grp5)
+tp5   = input.string("SMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp5)
+ln5   = input.int(200,      "Period", minval=1, group=grp5)
+sc5   = input.source(close, "Source", group=grp5)
+cu5   = input.color(color.lime,  "上向き色", group=grp5)
+cd5   = input.color(color.red,   "下向き色", group=grp5)
+cf5   = input.color(color.gray,  "フラット色", group=grp5)
+
+// ═══════════════════════════════════════════════════
+//  傾き・色設定
+// ═══════════════════════════════════════════════════
+grpS       = "━━ 傾き・色設定 ━━"
+slopeLen   = input.int(5,      "傾き算出バー数",             minval=1, maxval=50, group=grpS)
+alphaMin   = input.int(0,      "最大濃度 alpha（0=完全不透明）", minval=0, maxval=50, group=grpS)
+alphaMax   = input.int(40,     "最小濃度 alpha（傾きゼロ付近）", minval=10, maxval=90, group=grpS)
+satThresh  = input.float(0.3,  "飽和ROC%（これ以上で最大濃度）", minval=0.01, step=0.05, group=grpS)
+flatThresh = input.float(0.03, "フラット判定ROC%（これ以下でフラット）", minval=0.001, step=0.01, group=grpS,
+     tooltip="傾きの変化率がこの値以下の場合、フラット（灰色）表示になります")
+maWidth    = input.int(2,      "MA線の太さ",                 minval=1, maxval=5, group=grpS)
+
+// ═══════════════════════════════════════════════════
+//  MA計算
+// ═══════════════════════════════════════════════════
+dema(float src, int len) =>
+    e = ta.ema(src, len)
+    2 * e - ta.ema(e, len)
+
+tema(float src, int len) =>
+    e1 = ta.ema(src, len)
+    e2 = ta.ema(e1, len)
+    e3 = ta.ema(e2, len)
+    3 * (e1 - e2) + e3
+
+hma(float src, int len) =>
+    ta.wma(2 * ta.wma(src, len / 2) - ta.wma(src, len), math.round(math.sqrt(len)))
+
+calcMA(string t, float s, int l) =>
+    switch t
+        "SMA"  => ta.sma(s, l)
+        "EMA"  => ta.ema(s, l)
+        "WMA"  => ta.wma(s, l)
+        "RMA"  => ta.rma(s, l)
+        "VWMA" => ta.vwma(s, l)
+        "DEMA" => dema(s, l)
+        "TEMA" => tema(s, l)
+        "HMA"  => hma(s, l)
+
+ma1 = calcMA(tp1, sc1, ln1)
+ma2 = calcMA(tp2, sc2, ln2)
+ma3 = calcMA(tp3, sc3, ln3)
+ma4 = calcMA(tp4, sc4, ln4)
+ma5 = calcMA(tp5, sc5, ln5)
+
+// ═══════════════════════════════════════════════════
+//  傾き色（上向き/下向き/フラット 3色 + 強度で濃淡）
+// ═══════════════════════════════════════════════════
+slopeColor(float ma, int n, color colUp, color colDown, color colFlat) =>
+    slope = ma - ma[n]
+    roc   = ma[n] != 0 ? math.abs(slope / ma[n] * 100) : 0.0
+    // フラット判定: ROCが閾値以下
+    if roc <= flatThresh
+        color.new(colFlat, 20)
+    else
+        ratio = math.min(roc / satThresh, 1.0)
+        alpha = int(alphaMax - ratio * (alphaMax - alphaMin))
+        slope >= 0 ? color.new(colUp, alpha) : color.new(colDown, alpha)
+
+c1 = slopeColor(ma1, slopeLen, cu1, cd1, cf1)
+c2 = slopeColor(ma2, slopeLen, cu2, cd2, cf2)
+c3 = slopeColor(ma3, slopeLen, cu3, cd3, cf3)
+c4 = slopeColor(ma4, slopeLen, cu4, cd4, cf4)
+c5 = slopeColor(ma5, slopeLen, cu5, cd5, cf5)
+
+// ═══════════════════════════════════════════════════
+//  MAプロット
+// ═══════════════════════════════════════════════════
+plot(on1 ? ma1 : na, "MA 1", c1, maWidth)
+plot(on2 ? ma2 : na, "MA 2", c2, maWidth)
+plot(on3 ? ma3 : na, "MA 3", c3, maWidth)
+plot(on4 ? ma4 : na, "MA 4", c4, maWidth)
+plot(on5 ? ma5 : na, "MA 5", c5, maWidth)
+
+// ═══════════════════════════════════════════════════
+//  全MA傾き一致で背景色（フラットは除外）
+// ═══════════════════════════════════════════════════
+f_slopeState(float ma, int n) =>
+    float slope = ma - ma[n]
+    float roc = ma[n] != 0 ? math.abs(slope / ma[n] * 100) : 0.0
+    roc <= flatThresh ? 0 : slope > 0 ? 1 : -1
+
+st1 = f_slopeState(ma1, slopeLen)
+st2 = f_slopeState(ma2, slopeLen)
+st3 = f_slopeState(ma3, slopeLen)
+st4 = f_slopeState(ma4, slopeLen)
+st5 = f_slopeState(ma5, slopeLen)
+
+// 有効なMA（表示ON）のうち、フラット以外が全て同方向なら背景色
+allUpActive   = (not on1 or st1 >= 1) and (not on2 or st2 >= 1) and (not on3 or st3 >= 1) and (not on4 or st4 >= 1) and (not on5 or st5 >= 1)
+allDownActive = (not on1 or st1 <= -1) and (not on2 or st2 <= -1) and (not on3 or st3 <= -1) and (not on4 or st4 <= -1) and (not on5 or st5 <= -1)
+
+// フラットを含む場合は背景を出さない（すべて明確な方向の時のみ）
+anyFlat = (on1 and st1 == 0) or (on2 and st2 == 0) or (on3 and st3 == 0) or (on4 and st4 == 0) or (on5 and st5 == 0)
+
+bgcolor(not anyFlat and allUpActive ? color.new(color.green, 93) : not anyFlat and allDownActive ? color.new(color.red, 93) : na)

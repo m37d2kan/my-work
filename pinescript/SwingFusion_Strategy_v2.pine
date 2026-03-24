@@ -1,0 +1,630 @@
+//@version=5
+strategy("SwingFusion Strategy v2.0 - Pullback", overlay=true,
+     initial_capital=1000000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_order, commission_value=50,
+     slippage=5, pyramiding=0, calc_on_every_tick=false,
+     process_orders_on_close=true, close_entries_rule="ANY",
+     max_labels_count=500, max_lines_count=500)
+
+// ══════════════════════════════════════════════════════════════
+// ① スイング設定
+// ══════════════════════════════════════════════════════════════
+length1 = input.int(7,  "Swing1 ルックバック", minval=1, group="① スイング設定")
+length2 = input.int(28, "Swing2 ルックバック", minval=1, group="① スイング設定")
+
+// ══════════════════════════════════════════════════════════════
+// ② 移動平均線
+// ══════════════════════════════════════════════════════════════
+smaLen1 = input.int(20,  "主要MA期間 (SMA1)", minval=1, group="② 移動平均線")
+smaLen2 = input.int(60,  "中期MA期間 (SMA2)", minval=1, group="② 移動平均線")
+smaLen3 = input.int(240, "長期MA期間 (SMA3)", minval=1, group="② 移動平均線")
+
+sma1 = ta.sma(close, smaLen1)
+sma2 = ta.sma(close, smaLen2)
+sma3 = ta.sma(close, smaLen3)
+
+plot(sma1, "SMA1 (20)", color.purple, 2)
+plot(sma2, "SMA2 (60)", color.orange, 2)
+plot(sma3, "SMA3 (240)", color.red, 2)
+
+// ══════════════════════════════════════════════════════════════
+// ③ プルバック設定
+// ══════════════════════════════════════════════════════════════
+grpPB = "③ プルバック設定"
+pullbackMA = input.string("SMA2 (60)", "プルバック基準MA",
+     options=["SMA1 (20)", "SMA2 (60)", "SMA3 (240)"], group=grpPB)
+pullbackZone = input.float(1.0, "MA接近ゾーン (ATR倍率)", minval=0.1, maxval=5.0, step=0.1, group=grpPB)
+pullbackMode = input.string("MA接近 + SW1波動転換", "プルバック確認モード",
+     options=["MA接近 + SW1波動転換", "MAタッチ + 終値順方向", "MA接近のみ"], group=grpPB)
+
+// ══════════════════════════════════════════════════════════════
+// ④ フィルター設定
+// ══════════════════════════════════════════════════════════════
+grpFilter = "④ フィルター設定"
+slopeLen       = input.int(5, "傾き算出バー数", minval=1, maxval=50, group=grpFilter)
+useSlopeFilter = input.bool(true, "MA傾きフィルター ON/OFF", group=grpFilter)
+slopeMAChoice  = input.string("SMA3 (240)", "傾きフィルター基準MA",
+     options=["SMA1 (20)", "SMA2 (60)", "SMA3 (240)"], group=grpFilter)
+useLongMAFilter = input.bool(true, "長期MA方向フィルター ON/OFF", group=grpFilter)
+entryMaxDev    = input.float(1.5, "MA乖離上限 (ATR) ※近すぎ除外", minval=0.0, maxval=5.0, step=0.1, group=grpFilter)
+
+// ══════════════════════════════════════════════════════════════
+// ⑤ エグジット設定
+// ══════════════════════════════════════════════════════════════
+grpExit = "⑤ エグジット設定"
+atrPeriod       = input.int(14, "ATR期間", minval=1, group=grpExit)
+slMode          = input.string("SW1レベル", "損切りモード",
+     options=["ATR固定", "SW1レベル"], group=grpExit)
+slMultiplier    = input.float(1.5, "ATR固定SL (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+swingSLPadding  = input.float(0.3, "SW1レベルSL余裕 (ATR倍率)", minval=0.0, maxval=2.0, step=0.1, group=grpExit)
+tpMultiplier    = input.float(3.0, "利確 (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+useTrailing     = input.bool(false, "トレーリングストップ ON/OFF", group=grpExit)
+trailMultiplier = input.float(2.0, "トレーリング (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+trailOffsetMult = input.float(1.0, "トレールオフセット (ATR倍率)", minval=0.2, maxval=5.0, step=0.1, group=grpExit)
+exitOnReverse   = input.bool(true, "逆バイアス発生で決済", group=grpExit)
+exitOnSW1Turn   = input.bool(false, "SW1逆波動で決済", group=grpExit)
+
+// ══════════════════════════════════════════════════════════════
+// ⑥ 時間フィルター
+// ══════════════════════════════════════════════════════════════
+grpTime = "⑥ 時間フィルター"
+useTimeFilter     = input.bool(true, "時間制限 ON/OFF", group=grpTime)
+startHour         = input.int(8,  "開始（時）", minval=0, maxval=23, group=grpTime)
+startMin          = input.int(45, "開始（分）", minval=0, maxval=59, group=grpTime)
+endHour           = input.int(15, "終了（時）", minval=0, maxval=23, group=grpTime)
+endMin            = input.int(30, "終了（分）", minval=0, maxval=59, group=grpTime)
+closeAtSessionEnd = input.bool(true, "セッション終了時に全決済", group=grpTime)
+useOpenFilter     = input.bool(true, "寄付き除外 ON/OFF", group=grpTime)
+openExcludeMin    = input.int(30, "寄付き除外（分）", minval=5, maxval=60, step=5, group=grpTime)
+
+// ══════════════════════════════════════════════════════════════
+// ATR計算
+// ══════════════════════════════════════════════════════════════
+atrValue = ta.atr(atrPeriod)
+
+// ══════════════════════════════════════════════════════════════
+// MA取得
+// ══════════════════════════════════════════════════════════════
+float pbMA = switch pullbackMA
+    "SMA1 (20)"  => sma1
+    "SMA2 (60)"  => sma2
+    "SMA3 (240)" => sma3
+    => sma2
+
+float slopeFilterMA = switch slopeMAChoice
+    "SMA1 (20)"  => sma1
+    "SMA2 (60)"  => sma2
+    "SMA3 (240)" => sma3
+    => sma3
+
+float maSlope = slopeFilterMA - slopeFilterMA[slopeLen]
+bool slopeUp   = maSlope > 0
+bool slopeDown = maSlope < 0
+
+// ══════════════════════════════════════════════════════════════
+// 時間フィルター関数
+// ══════════════════════════════════════════════════════════════
+f_inSignalTime() =>
+    if not useTimeFilter
+        true
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int startM  = startHour * 60 + startMin
+        int endM    = endHour * 60 + endMin
+        bool inSession = startM <= endM ? (current >= startM and current < endM) : (current >= startM or current < endM)
+        bool afterOpen = not useOpenFilter or (current >= startM + openExcludeMin)
+        inSession and afterOpen
+
+f_isSessionEnd() =>
+    if not closeAtSessionEnd or not useTimeFilter
+        false
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int endM    = endHour * 60 + endMin
+        current >= endM - 5 and current < endM + 5
+
+// ══════════════════════════════════════════════════════════════
+// Swing1 ロジック
+// ══════════════════════════════════════════════════════════════
+var string pbState1 = "---"
+var string lastPBSignal1 = na
+var bool   ssb_findingMin1 = true
+var bool   ssb_findingMax1 = false
+var float  ssb_minPrice1 = na, var int ssb_minIdx1 = na
+var float  ssb_maxPrice1 = na, var int ssb_maxIdx1 = na
+var float  ssb_maxClose1 = na, var float ssb_minClose1 = na
+var array<float> peakPx1 = array.new<float>()
+var array<int>   peakIx1 = array.new<int>()
+var array<float> botPx1  = array.new<float>()
+var array<int>   botIx1  = array.new<int>()
+var string trend_status1_confirmed = "FLAT"
+var float  prevPeak1 = na, var float prevBot1 = na
+var float  prevPeak2nd1 = na, var float prevBot2nd1 = na
+var float  prevPeakClose1 = na, var float prevBotClose1 = na
+var int    prevPeakIdx1 = na, var int prevBotIdx1 = na
+var int    prevPeak2ndIdx1 = na, var int prevBot2ndIdx1 = na
+var float  prevPeak2ndClose1 = na, var float prevBot2ndClose1 = na
+var bool   peakFalling1 = false, var bool botRising1 = false
+var float  oshiYasune1 = na, var bool oshiBroken1 = false
+var int    oshiYasuneIdx1 = na
+var float  modoriTakane1 = na, var bool modoriBroken1 = false
+var int    modoriTakaneIdx1 = na
+
+peakCondition1   = low < ta.lowest(low, length1)[1] and lastPBSignal1 != "peak"
+bottomCondition1 = high > ta.highest(high, length1)[1] and lastPBSignal1 != "bottom"
+
+if peakCondition1
+    lastPBSignal1 := "peak"
+    pbState1      := "下落波動"
+if bottomCondition1
+    lastPBSignal1 := "bottom"
+    pbState1      := "上昇波動"
+
+f_calcTrendStatus(array<float> peaks, array<float> bots) =>
+    string result = "FLAT"
+    if array.size(peaks) >= 2 and array.size(bots) >= 2
+        float P0 = array.get(peaks, array.size(peaks) - 2)
+        float P1 = array.get(peaks, array.size(peaks) - 1)
+        float B0 = array.get(bots, array.size(bots) - 2)
+        float B1 = array.get(bots, array.size(bots) - 1)
+        if P1 > P0 and B1 > B0
+            result := "UP"
+        else if P1 < P0 and B1 < B0
+            result := "DOWN"
+    result
+
+if barstate.isconfirmed
+    if ssb_findingMin1 and (na(ssb_minPrice1) or low < ssb_minPrice1)
+        ssb_minPrice1 := low
+        ssb_minIdx1   := bar_index
+        ssb_minClose1 := close
+    if ssb_findingMax1 and (na(ssb_maxPrice1) or high > ssb_maxPrice1)
+        ssb_maxPrice1 := high
+        ssb_maxIdx1   := bar_index
+        ssb_maxClose1 := close
+
+    peak_conf1   = ssb_findingMax1 and low < ta.lowest(low, length1)[1]
+    bottom_conf1 = ssb_findingMin1 and high > ta.highest(high, length1)[1]
+
+    if peak_conf1
+        array.push(peakPx1, ssb_maxPrice1)
+        array.push(peakIx1, ssb_maxIdx1)
+        if array.size(peakPx1) > 2
+            array.shift(peakPx1), array.shift(peakIx1)
+        trend_status1_confirmed := f_calcTrendStatus(peakPx1, botPx1)
+        if not na(prevPeak1)
+            if ssb_maxPrice1 > prevPeak1
+                if botRising1 and not na(prevBot1)
+                    if na(oshiYasune1) or prevBot1 > oshiYasune1
+                        oshiYasune1    := prevBot1
+                        oshiYasuneIdx1 := prevBotIdx1
+                        oshiBroken1    := false
+                peakFalling1     := false
+                modoriTakane1    := na
+                modoriTakaneIdx1 := na
+                modoriBroken1    := false
+            else if ssb_maxPrice1 < prevPeak1
+                peakFalling1 := true
+        prevPeak2ndClose1 := prevPeakClose1
+        prevPeak2ndIdx1   := prevPeakIdx1
+        prevPeak2nd1      := prevPeak1
+        prevPeakClose1    := ssb_maxClose1
+        prevPeakIdx1      := ssb_maxIdx1
+        prevPeak1         := ssb_maxPrice1
+        ssb_findingMax1   := false
+        ssb_findingMin1   := true
+        ssb_minPrice1     := low
+        ssb_minIdx1       := bar_index
+        ssb_minClose1     := close
+
+    if bottom_conf1
+        array.push(botPx1, ssb_minPrice1)
+        array.push(botIx1, ssb_minIdx1)
+        if array.size(botPx1) > 2
+            array.shift(botPx1), array.shift(botIx1)
+        trend_status1_confirmed := f_calcTrendStatus(peakPx1, botPx1)
+        if not na(prevBot1)
+            if ssb_minPrice1 < prevBot1
+                if peakFalling1 and not na(prevPeak1)
+                    if na(modoriTakane1) or prevPeak1 < modoriTakane1
+                        modoriTakane1    := prevPeak1
+                        modoriTakaneIdx1 := prevPeakIdx1
+                        modoriBroken1    := false
+                botRising1       := false
+                oshiYasune1      := na
+                oshiYasuneIdx1   := na
+                oshiBroken1      := false
+            else if ssb_minPrice1 > prevBot1
+                botRising1 := true
+        prevBot2ndClose1 := prevBotClose1
+        prevBot2ndIdx1   := prevBotIdx1
+        prevBot2nd1      := prevBot1
+        prevBotClose1    := ssb_minClose1
+        prevBotIdx1      := ssb_minIdx1
+        prevBot1         := ssb_minPrice1
+        ssb_findingMin1  := false
+        ssb_findingMax1  := true
+        ssb_maxPrice1    := high
+        ssb_maxIdx1      := bar_index
+        ssb_maxClose1    := close
+
+if not na(prevPeak1) and not na(prevBot1)
+    if high > prevPeak1 and botRising1
+        if na(oshiYasune1) or prevBot1 > oshiYasune1
+            oshiYasune1    := prevBot1
+            oshiYasuneIdx1 := prevBotIdx1
+            oshiBroken1    := false
+if not na(prevBot1) and not na(prevPeak1)
+    if low < prevBot1 and peakFalling1
+        if na(modoriTakane1) or prevPeak1 < modoriTakane1
+            modoriTakane1    := prevPeak1
+            modoriTakaneIdx1 := prevPeakIdx1
+            modoriBroken1    := false
+
+// ══════════════════════════════════════════════════════════════
+// Swing2 ロジック
+// ══════════════════════════════════════════════════════════════
+var string pbState2 = "---"
+var string lastPBSignal2 = na
+var bool   ssb_findingMin2 = true
+var bool   ssb_findingMax2 = false
+var float  ssb_minPrice2 = na, var int ssb_minIdx2 = na
+var float  ssb_maxPrice2 = na, var int ssb_maxIdx2 = na
+var array<float> peakPx2 = array.new<float>()
+var array<int>   peakIx2 = array.new<int>()
+var array<float> botPx2  = array.new<float>()
+var array<int>   botIx2  = array.new<int>()
+var string trend_status2_confirmed = "FLAT"
+var float  prevPeak2 = na, var float prevBot2 = na
+var float  prevPeak2nd2 = na, var float prevBot2nd2 = na
+var bool   peakFalling2 = false, var bool botRising2 = false
+var float  oshiYasune2 = na, var bool oshiBroken2 = false
+var float  modoriTakane2 = na, var bool modoriBroken2 = false
+
+peakCondition2   = low < ta.lowest(low, length2)[1] and lastPBSignal2 != "peak"
+bottomCondition2 = high > ta.highest(high, length2)[1] and lastPBSignal2 != "bottom"
+
+if peakCondition2
+    lastPBSignal2 := "peak"
+    pbState2      := "下落波動"
+if bottomCondition2
+    lastPBSignal2 := "bottom"
+    pbState2      := "上昇波動"
+
+if barstate.isconfirmed
+    if ssb_findingMin2 and (na(ssb_minPrice2) or low < ssb_minPrice2)
+        ssb_minPrice2 := low
+        ssb_minIdx2   := bar_index
+    if ssb_findingMax2 and (na(ssb_maxPrice2) or high > ssb_maxPrice2)
+        ssb_maxPrice2 := high
+        ssb_maxIdx2   := bar_index
+
+    peak_conf2   = ssb_findingMax2 and low < ta.lowest(low, length2)[1]
+    bottom_conf2 = ssb_findingMin2 and high > ta.highest(high, length2)[1]
+
+    if peak_conf2
+        array.push(peakPx2, ssb_maxPrice2)
+        array.push(peakIx2, ssb_maxIdx2)
+        if array.size(peakPx2) > 2
+            array.shift(peakPx2), array.shift(peakIx2)
+        trend_status2_confirmed := f_calcTrendStatus(peakPx2, botPx2)
+        if not na(prevPeak2)
+            if ssb_maxPrice2 > prevPeak2
+                if botRising2 and not na(prevBot2)
+                    if na(oshiYasune2) or prevBot2 > oshiYasune2
+                        oshiYasune2 := prevBot2
+                        oshiBroken2 := false
+                peakFalling2  := false
+                modoriTakane2 := na
+                modoriBroken2 := false
+            else if ssb_maxPrice2 < prevPeak2
+                peakFalling2 := true
+        prevPeak2nd2    := prevPeak2
+        prevPeak2       := ssb_maxPrice2
+        ssb_findingMax2 := false
+        ssb_findingMin2 := true
+        ssb_minPrice2   := low
+        ssb_minIdx2     := bar_index
+
+    if bottom_conf2
+        array.push(botPx2, ssb_minPrice2)
+        array.push(botIx2, ssb_minIdx2)
+        if array.size(botPx2) > 2
+            array.shift(botPx2), array.shift(botIx2)
+        trend_status2_confirmed := f_calcTrendStatus(peakPx2, botPx2)
+        if not na(prevBot2)
+            if ssb_minPrice2 < prevBot2
+                if peakFalling2 and not na(prevPeak2)
+                    if na(modoriTakane2) or prevPeak2 < modoriTakane2
+                        modoriTakane2 := prevPeak2
+                        modoriBroken2 := false
+                botRising2   := false
+                oshiYasune2  := na
+                oshiBroken2  := false
+            else if ssb_minPrice2 > prevBot2
+                botRising2 := true
+        prevBot2nd2     := prevBot2
+        prevBot2        := ssb_minPrice2
+        ssb_findingMin2 := false
+        ssb_findingMax2 := true
+        ssb_maxPrice2   := high
+        ssb_maxIdx2     := bar_index
+
+if not na(prevPeak2) and not na(prevBot2)
+    if high > prevPeak2 and botRising2
+        if na(oshiYasune2) or prevBot2 > oshiYasune2
+            oshiYasune2 := prevBot2
+            oshiBroken2 := false
+if not na(prevBot2) and not na(prevPeak2)
+    if low < prevBot2 and peakFalling2
+        if na(modoriTakane2) or prevPeak2 < modoriTakane2
+            modoriTakane2 := prevPeak2
+            modoriBroken2 := false
+
+// ── リアルタイムトレンド ──
+f_calcRT(array<float> peaks, array<float> bots, string conf) =>
+    string r = conf
+    if array.size(peaks) >= 2 and array.size(bots) >= 2
+        float P1 = array.get(peaks, array.size(peaks) - 1)
+        float B1 = array.get(bots, array.size(bots) - 1)
+        if conf == "UP" and low < B1
+            r := "FLAT"
+        else if conf == "DOWN" and high > P1
+            r := "FLAT"
+        else if conf == "FLAT"
+            if high > P1 and not (low < B1)
+                r := "UP"
+            else if low < B1 and not (high > P1)
+                r := "DOWN"
+    r
+
+string trend1 = f_calcRT(peakPx1, botPx1, trend_status1_confirmed)
+string trend2 = f_calcRT(peakPx2, botPx2, trend_status2_confirmed)
+
+// ══════════════════════════════════════════════════════════════
+// トレンドバイアス（ブレイクで方向確定、プルバック待ち）
+// ══════════════════════════════════════════════════════════════
+var string trendBias = "NEUTRAL"  // "BULL", "BEAR", "NEUTRAL"
+var int    biasSetBar = 0
+var float  biasBreakPrice = na
+
+// ── SW1ブレイク検出 ──
+var bool oshiBreakSignal1   = false
+var bool modoriBreakSignal1 = false
+oshiBreakSignal1  := false
+modoriBreakSignal1 := false
+
+if barstate.isconfirmed
+    // 押し安値ブレイク → Bear Bias
+    if not na(oshiYasune1) and not oshiBroken1
+        if close < oshiYasune1
+            oshiBroken1      := true
+            botRising1       := false
+            oshiBreakSignal1 := true
+    // 戻り高値ブレイク → Bull Bias
+    if not na(modoriTakane1) and not modoriBroken1
+        if close > modoriTakane1
+            modoriBroken1      := true
+            peakFalling1       := false
+            modoriBreakSignal1 := true
+    // SW2ブレイク（状態更新のみ）
+    if not na(oshiYasune2) and not oshiBroken2
+        if close < oshiYasune2
+            oshiBroken2 := true
+            botRising2  := false
+    if not na(modoriTakane2) and not modoriBroken2
+        if close > modoriTakane2
+            modoriBroken2 := true
+            peakFalling2  := false
+
+// ── バイアス更新 ──
+if oshiBreakSignal1
+    trendBias      := "BEAR"
+    biasSetBar     := bar_index
+    biasBreakPrice := close
+
+if modoriBreakSignal1
+    trendBias      := "BULL"
+    biasSetBar     := bar_index
+    biasBreakPrice := close
+
+// ══════════════════════════════════════════════════════════════
+// プルバックエントリー判定
+// ══════════════════════════════════════════════════════════════
+bool timeOK = f_inSignalTime()
+float pbZoneWidth = atrValue * pullbackZone
+
+// ── MA接近判定 ──
+float distToMA = not na(pbMA) ? math.abs(close - pbMA) : na
+bool inMAZone  = not na(distToMA) and distToMA <= pbZoneWidth
+
+// ── MAタッチ判定（バー中にMAを跨いだ） ──
+bool touchedMA = not na(pbMA) and ((low <= pbMA and high >= pbMA) or (low[1] <= pbMA and high[1] >= pbMA))
+
+// ── 終値が順方向 ──
+bool closeBullish = close > open and close > pbMA
+bool closeBearish = close < open and close < pbMA
+
+// ── MA方向フィルター ──
+bool longMABuyOK  = not useLongMAFilter or (not na(sma3) and close > sma3)
+bool longMASellOK = not useLongMAFilter or (not na(sma3) and close < sma3)
+bool slopeBuyOK   = not useSlopeFilter or slopeUp
+bool slopeSellOK  = not useSlopeFilter or slopeDown
+
+// ── プルバック確認 ──
+bool pullbackBuyConfirm = false
+bool pullbackSellConfirm = false
+
+if pullbackMode == "MA接近 + SW1波動転換"
+    // 買い: MAゾーンに入った後、SW1で上昇波動転換（bottom signal）
+    pullbackBuyConfirm  := inMAZone and bottomCondition1
+    // 売り: MAゾーンに入った後、SW1で下落波動転換（peak signal）
+    pullbackSellConfirm := inMAZone and peakCondition1
+
+else if pullbackMode == "MAタッチ + 終値順方向"
+    pullbackBuyConfirm  := touchedMA and closeBullish
+    pullbackSellConfirm := touchedMA and closeBearish
+
+else // MA接近のみ
+    pullbackBuyConfirm  := inMAZone and close > pbMA
+    pullbackSellConfirm := inMAZone and close < pbMA
+
+// ── 最終エントリーシグナル ──
+bool entrySignalBuy  = false
+bool entrySignalSell = false
+
+if barstate.isconfirmed and timeOK and strategy.position_size == 0
+    // ── BULL Bias + プルバック買い ──
+    if trendBias == "BULL" and pullbackBuyConfirm and slopeBuyOK and longMABuyOK
+        entrySignalBuy := true
+
+    // ── BEAR Bias + プルバック売り ──
+    if trendBias == "BEAR" and pullbackSellConfirm and slopeSellOK and longMASellOK
+        entrySignalSell := true
+
+// ══════════════════════════════════════════════════════════════
+// エントリー・エグジット実行
+// ══════════════════════════════════════════════════════════════
+float slATR    = atrValue * slMultiplier
+float tpPoints = atrValue * tpMultiplier
+
+if entrySignalBuy
+    // SL: SW1直近ボトム or ATR固定
+    float buySL = slMode == "SW1レベル" and not na(prevBot1) ?
+         prevBot1 - atrValue * swingSLPadding : close - slATR
+    // SLが遠すぎる場合はATR固定にフォールバック
+    float maxSL = close - atrValue * 4.0
+    buySL := math.max(buySL, maxSL)
+    float buyTP = close + tpPoints
+    strategy.entry("Long", strategy.long, comment="PB Buy")
+    strategy.exit("Long Exit", "Long",
+         stop=buySL, limit=buyTP,
+         trail_points=useTrailing ? atrValue * trailMultiplier : na,
+         trail_offset=useTrailing ? atrValue * trailOffsetMult : na)
+
+if entrySignalSell
+    float sellSL = slMode == "SW1レベル" and not na(prevPeak1) ?
+         prevPeak1 + atrValue * swingSLPadding : close + slATR
+    float maxSL = close + atrValue * 4.0
+    sellSL := math.min(sellSL, maxSL)
+    float sellTP = close - tpPoints
+    strategy.entry("Short", strategy.short, comment="PB Sell")
+    strategy.exit("Short Exit", "Short",
+         stop=sellSL, limit=sellTP,
+         trail_points=useTrailing ? atrValue * trailMultiplier : na,
+         trail_offset=useTrailing ? atrValue * trailOffsetMult : na)
+
+// ── 逆バイアスで決済 ──
+if exitOnReverse and barstate.isconfirmed
+    if strategy.position_size > 0 and oshiBreakSignal1
+        strategy.close("Long", comment="Bear Break決済")
+    if strategy.position_size < 0 and modoriBreakSignal1
+        strategy.close("Short", comment="Bull Break決済")
+
+// ── SW1逆波動で決済 ──
+if exitOnSW1Turn and barstate.isconfirmed
+    if strategy.position_size > 0 and peakCondition1
+        strategy.close("Long", comment="SW1下落波動")
+    if strategy.position_size < 0 and bottomCondition1
+        strategy.close("Short", comment="SW1上昇波動")
+
+// ── セッション終了決済 ──
+if f_isSessionEnd()
+    if strategy.position_size != 0
+        strategy.close_all(comment="セッション終了")
+
+// ══════════════════════════════════════════════════════════════
+// プロット
+// ══════════════════════════════════════════════════════════════
+plotshape(entrySignalBuy, "PB Buy", shape.labelup, location.belowbar,
+     color.blue, size=size.normal, text="PB\nBUY")
+plotshape(entrySignalSell, "PB Sell", shape.labeldown, location.abovebar,
+     color.red, size=size.normal, text="PB\nSELL")
+
+// ── ブレイクシグナル（バイアス確定マーク） ──
+plotshape(modoriBreakSignal1, "Bull Break", shape.triangleup, location.belowbar,
+     color.new(color.blue, 50), size=size.tiny, text="B")
+plotshape(oshiBreakSignal1, "Bear Break", shape.triangledown, location.abovebar,
+     color.new(color.red, 50), size=size.tiny, text="S")
+
+// ── P&Bシグナル ──
+plotshape(peakCondition1 ? high : na, "SW1 Peak", shape.triangledown,
+     location.absolute, color.new(color.orange, 40), size=size.tiny)
+plotshape(bottomCondition1 ? low : na, "SW1 Bottom", shape.triangleup,
+     location.absolute, color.new(color.teal, 40), size=size.tiny)
+
+// ── 押し安値/戻り高値ライン ──
+var line oshiLine1 = na, var line modoriLine1 = na
+if not na(oshiLine1)
+    line.delete(oshiLine1)
+if not na(modoriLine1)
+    line.delete(modoriLine1)
+if not na(oshiYasune1) and not oshiBroken1
+    oshiLine1 := line.new(bar_index - 30, oshiYasune1, bar_index + 5, oshiYasune1,
+         color=color.green, width=2, style=line.style_solid)
+if not na(modoriTakane1) and not modoriBroken1
+    modoriLine1 := line.new(bar_index - 30, modoriTakane1, bar_index + 5, modoriTakane1,
+         color=color.red, width=2, style=line.style_solid)
+
+// ── プルバックMA帯 ──
+float pbUpper = not na(pbMA) ? pbMA + pbZoneWidth : na
+float pbLower = not na(pbMA) ? pbMA - pbZoneWidth : na
+p1 = plot(pbUpper, "PB Zone Upper", color=color.new(color.gray, 90))
+p2 = plot(pbLower, "PB Zone Lower", color=color.new(color.gray, 90))
+fill(p1, p2, color=color.new(color.yellow, 90), title="PB Zone")
+
+// ── バイアス背景色 ──
+color biasBG = trendBias == "BULL" ? color.new(color.blue, 95) :
+     trendBias == "BEAR" ? color.new(color.red, 95) : na
+bgcolor(biasBG, title="バイアス背景")
+
+// ══════════════════════════════════════════════════════════════
+// テーブル
+// ══════════════════════════════════════════════════════════════
+var table infoTable = table.new(position.bottom_right, 5, 4, border_width=1)
+f_trendJP(string s) => s == "UP" ? "上昇" : s == "DOWN" ? "下降" : "レス"
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, "", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, "トレンド", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 2, 0, "波動", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 3, 0, "押安/戻高", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 4, 0, "状態", bgcolor=#333333, text_color=color.white, text_size=size.small)
+
+    color pb1C = pbState1 == "上昇波動" ? #009600 : pbState1 == "下落波動" ? #C80000 : #646464
+    string oshiMod1 = (not na(oshiYasune1) ? str.tostring(oshiYasune1, "#") + (oshiBroken1 ? "✗" : "●") : "---") + " / " + (not na(modoriTakane1) ? str.tostring(modoriTakane1, "#") + (modoriBroken1 ? "✗" : "●") : "---")
+    table.cell(infoTable, 0, 1, "SW1", bgcolor=#1E50B4, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 1, f_trendJP(trend1), bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 2, 1, pbState1, bgcolor=pb1C, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 3, 1, oshiMod1, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 4, 1, inMAZone ? "MA圏内" : "MA圏外", bgcolor=inMAZone ? #B8860B : #464646, text_color=color.white, text_size=size.small)
+
+    color pb2C = pbState2 == "上昇波動" ? #009600 : pbState2 == "下落波動" ? #C80000 : #646464
+    table.cell(infoTable, 0, 2, "SW2", bgcolor=#8232B4, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 2, f_trendJP(trend2), bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 2, 2, pbState2, bgcolor=pb2C, text_color=color.white, text_size=size.small)
+    float maDev = not na(sma3) and atrValue > 0 ? (close - sma3) / atrValue : na
+    table.cell(infoTable, 3, 2, not na(maDev) ? (maDev >= 0 ? "+" : "") + str.tostring(maDev, "#.#") + "ATR" : "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 4, 2, "MA傾:" + (slopeUp ? "↑" : slopeDown ? "↓" : "→"), bgcolor=slopeUp ? #006400 : slopeDown ? #960000 : #464646, text_color=color.white, text_size=size.small)
+
+    color biasC = trendBias == "BULL" ? #0064C8 : trendBias == "BEAR" ? #C83232 : #646464
+    string posText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    color posC = strategy.position_size > 0 ? #0064C8 : strategy.position_size < 0 ? #C83232 : #646464
+    table.cell(infoTable, 0, 3, "BIAS", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 3, trendBias, bgcolor=biasC, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 2, 3, posText, bgcolor=posC, text_color=color.white, text_size=size.small)
+    string pnl = strategy.position_size != 0 ? str.tostring(strategy.openprofit, "#") : "---"
+    table.cell(infoTable, 3, 3, pnl, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 4, 3, "RR 1:" + str.tostring(tpMultiplier/slMultiplier, "#.#"), bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+// ══════════════════════════════════════════════════════════════
+// アラート
+// ══════════════════════════════════════════════════════════════
+alertcondition(entrySignalBuy,  title="PB Buy",  message="Pullback BUY - {{ticker}} @ {{close}}")
+alertcondition(entrySignalSell, title="PB Sell", message="Pullback SELL - {{ticker}} @ {{close}}")
+alertcondition(oshiBreakSignal1,  title="Bear Break", message="Bear Break (押安ブレイク) - {{ticker}} @ {{close}}")
+alertcondition(modoriBreakSignal1, title="Bull Break", message="Bull Break (戻高ブレイク) - {{ticker}} @ {{close}}")

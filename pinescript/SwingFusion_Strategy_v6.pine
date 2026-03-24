@@ -1,0 +1,362 @@
+//@version=5
+strategy("SwingFusion Strategy v6.0 - SW2 Turn Entry", overlay=true,
+     initial_capital=1000000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_order, commission_value=50,
+     slippage=5, pyramiding=0, calc_on_every_tick=false,
+     close_entries_rule="ANY", max_labels_count=500, max_lines_count=500)
+
+// ══════════════════════════════════════════════════════════════
+// ① Swing設定
+// ══════════════════════════════════════════════════════════════
+grpSW = "① Swing設定"
+length1 = input.int(7,  "SW1 ルックバック (SL用)", minval=1, group=grpSW)
+length2 = input.int(20, "SW2 ルックバック (エントリー用)", minval=1, group=grpSW)
+
+// ══════════════════════════════════════════════════════════════
+// ② エントリー設定
+// ══════════════════════════════════════════════════════════════
+grpEntry = "② エントリー"
+entryOffset = input.float(10.0, "転換価格オフセット (±pt)", minval=0, maxval=100, step=5,
+     tooltip="BUY: 転換価格+offset, SELL: 転換価格-offset", group=grpEntry)
+
+// ══════════════════════════════════════════════════════════════
+// ③ エグジット設定
+// ══════════════════════════════════════════════════════════════
+grpExit = "③ エグジット"
+slMode      = input.string("直近Nバー", "SLモード",
+     options=["SW1レベル", "直近Nバー"],
+     tooltip="SW1レベル=SW1ピーク/ボトム基準, 直近Nバー=エントリー足からNバー前の最高/最安値基準", group=grpExit)
+slPadding   = input.float(10.0, "SL余裕 (pt)", minval=0, maxval=100, step=5,
+     tooltip="SL基準価格からの余裕", group=grpExit)
+slLookback  = input.int(3, "SL直近ルックバック (バー数)", minval=1, maxval=20, step=1,
+     tooltip="エントリー足を含むNバーの最高/最安値", group=grpExit)
+tpRatio     = input.float(1.0, "PT倍率 (SL値幅×N)", minval=0.5, maxval=10.0, step=0.5,
+     tooltip="1.0=同値幅, 2.0=SLの2倍", group=grpExit)
+
+// ══════════════════════════════════════════════════════════════
+// ④ 時間フィルター
+// ══════════════════════════════════════════════════════════════
+grpTime = "④ 時間フィルター"
+useTimeFilter     = input.bool(false, "時間制限 ON/OFF", group=grpTime)
+startHour         = input.int(8,  "開始（時）", minval=0, maxval=23, group=grpTime)
+startMin          = input.int(45, "開始（分）", minval=0, maxval=59, group=grpTime)
+endHour           = input.int(15, "終了（時）", minval=0, maxval=23, group=grpTime)
+endMin            = input.int(30, "終了（分）", minval=0, maxval=59, group=grpTime)
+closeAtSessionEnd = input.bool(false, "セッション終了時に全決済", group=grpTime)
+
+// ══════════════════════════════════════════════════════════════
+// ⑤ 表示設定
+// ══════════════════════════════════════════════════════════════
+grpDisp = "⑤ 表示"
+showSMA1     = input.bool(true, "20MA表示", group=grpDisp)
+showSMA2     = input.bool(true, "80MA表示", group=grpDisp)
+showSMA3     = input.bool(true, "200MA表示", group=grpDisp)
+showTurnLine = input.bool(true, "転換価格ライン表示", group=grpDisp)
+showSLLine   = input.bool(true, "SLライン表示", group=grpDisp)
+showTPLine   = input.bool(true, "TPライン表示", group=grpDisp)
+
+// ══════════════════════════════════════════════════════════════
+// MA計算（表示のみ）
+// ══════════════════════════════════════════════════════════════
+sma1 = ta.sma(close, 20)
+sma2 = ta.sma(close, 80)
+sma3 = ta.sma(close, 200)
+plot(showSMA1 ? sma1 : na, "20MA",  color.purple, 2)
+plot(showSMA2 ? sma2 : na, "80MA",  color.orange, 2)
+plot(showSMA3 ? sma3 : na, "200MA", color.red, 2)
+
+// ══════════════════════════════════════════════════════════════
+// ATR（参考表示用）
+// ══════════════════════════════════════════════════════════════
+atrValue = ta.atr(14)
+
+// ══════════════════════════════════════════════════════════════
+// SW1 ピーク/ボトム記録（SL用）
+// ══════════════════════════════════════════════════════════════
+var float prevPeak1 = na
+var float prevBot1  = na
+var bool  findMin1  = true
+var bool  findMax1  = false
+var float minP1     = na
+var float maxP1     = na
+
+if barstate.isconfirmed
+    if findMin1 and (na(minP1) or low < minP1)
+        minP1 := low
+    if findMax1 and (na(maxP1) or high > maxP1)
+        maxP1 := high
+
+    if findMax1 and low < ta.lowest(low, length1)[1]
+        prevPeak1 := maxP1
+        findMax1  := false
+        findMin1  := true
+        minP1     := low
+
+    if findMin1 and high > ta.highest(high, length1)[1]
+        prevBot1  := minP1
+        findMin1  := false
+        findMax1  := true
+        maxP1     := high
+
+// ══════════════════════════════════════════════════════════════
+// SW2 P&B ロジック
+// ══════════════════════════════════════════════════════════════
+var string pbState2 = "---"
+var string lastPB2  = na
+
+bool peakCond2   = low < ta.lowest(low, length2)[1] and lastPB2 != "peak"
+bool bottomCond2 = high > ta.highest(high, length2)[1] and lastPB2 != "bottom"
+
+if peakCond2
+    lastPB2  := "peak"
+    pbState2 := "下落波動"
+if bottomCond2
+    lastPB2  := "bottom"
+    pbState2 := "上昇波動"
+
+// ══════════════════════════════════════════════════════════════
+// 転換価格
+// ══════════════════════════════════════════════════════════════
+float turnPriceSell = ta.lowest(low, length2)[1]
+float turnPriceBuy  = ta.highest(high, length2)[1]
+
+// エントリー価格（オフセット付き）
+float entryPriceBuy  = not na(turnPriceBuy)  ? turnPriceBuy + entryOffset  : na
+float entryPriceSell = not na(turnPriceSell) ? turnPriceSell - entryOffset : na
+
+// ══════════════════════════════════════════════════════════════
+// SL/TP計算（事前計算 - 逆指値注文セット時に使用）
+// ══════════════════════════════════════════════════════════════
+// 事前SL: SW1レベル基準（注文セット時の初期値）
+float preSLBuy  = not na(prevBot1) ? prevBot1 - slPadding : na
+float preSLSell = not na(prevPeak1) ? prevPeak1 + slPadding : na
+
+float preSlWidthBuy  = not na(entryPriceBuy) and not na(preSLBuy)  ? entryPriceBuy - preSLBuy   : na
+float preSlWidthSell = not na(entryPriceSell) and not na(preSLSell) ? preSLSell - entryPriceSell : na
+
+float preTpBuy  = not na(entryPriceBuy) and not na(preSlWidthBuy)   ? entryPriceBuy + preSlWidthBuy * tpRatio   : na
+float preTpSell = not na(entryPriceSell) and not na(preSlWidthSell) ? entryPriceSell - preSlWidthSell * tpRatio : na
+
+// ══════════════════════════════════════════════════════════════
+// エントリー確定後のSL/TP（ポジション取得時に確定）
+// ══════════════════════════════════════════════════════════════
+var float activeSL = na
+var float activeTP = na
+
+// LONG新規取得
+if strategy.position_size > 0 and strategy.position_size[1] <= 0
+    float entryP = strategy.position_avg_price
+    if slMode == "直近Nバー"
+        // エントリー足を含む直近Nバーの最安値
+        activeSL := ta.lowest(low, slLookback) - slPadding
+    else
+        // SW1ボトム基準
+        activeSL := not na(prevBot1) ? prevBot1 - slPadding : entryP - atrValue * 2
+    float slW = entryP - activeSL
+    activeTP := entryP + slW * tpRatio
+
+// SHORT新規取得
+if strategy.position_size < 0 and strategy.position_size[1] >= 0
+    float entryP = strategy.position_avg_price
+    if slMode == "直近Nバー"
+        // エントリー足を含む直近Nバーの最高値
+        activeSL := ta.highest(high, slLookback) + slPadding
+    else
+        // SW1ピーク基準
+        activeSL := not na(prevPeak1) ? prevPeak1 + slPadding : entryP + atrValue * 2
+    float slW = activeSL - entryP
+    activeTP := entryP - slW * tpRatio
+
+// ポジションなし → リセット
+if strategy.position_size == 0
+    activeSL := na
+    activeTP := na
+
+// ══════════════════════════════════════════════════════════════
+// ライン表示
+// ══════════════════════════════════════════════════════════════
+var line turnLineBuy  = na, var line turnLineSell = na
+var line slLineBuy    = na, var line slLineSell   = na
+var line tpLineBuy    = na, var line tpLineSell   = na
+
+if not na(turnLineBuy)
+    line.delete(turnLineBuy)
+if not na(turnLineSell)
+    line.delete(turnLineSell)
+if not na(slLineBuy)
+    line.delete(slLineBuy)
+if not na(slLineSell)
+    line.delete(slLineSell)
+if not na(tpLineBuy)
+    line.delete(tpLineBuy)
+if not na(tpLineSell)
+    line.delete(tpLineSell)
+
+int ext = 15
+
+if showTurnLine
+    if pbState2 == "下落波動" and not na(entryPriceBuy)
+        turnLineBuy := line.new(bar_index - 5, entryPriceBuy, bar_index + ext, entryPriceBuy,
+             color=color.blue, width=2, style=line.style_dashed)
+    if pbState2 == "上昇波動" and not na(entryPriceSell)
+        turnLineSell := line.new(bar_index - 5, entryPriceSell, bar_index + ext, entryPriceSell,
+             color=color.red, width=2, style=line.style_dashed)
+
+if showSLLine
+    // ポジション中はactiveSLを表示、なければ事前計算値
+    if strategy.position_size > 0 and not na(activeSL)
+        slLineBuy := line.new(bar_index - 5, activeSL, bar_index + ext, activeSL,
+             color=color.new(color.red, 40), width=1, style=line.style_dotted)
+    else if pbState2 == "下落波動" and not na(preSLBuy)
+        slLineBuy := line.new(bar_index - 5, preSLBuy, bar_index + ext, preSLBuy,
+             color=color.new(color.red, 40), width=1, style=line.style_dotted)
+    if strategy.position_size < 0 and not na(activeSL)
+        slLineSell := line.new(bar_index - 5, activeSL, bar_index + ext, activeSL,
+             color=color.new(color.red, 40), width=1, style=line.style_dotted)
+    else if pbState2 == "上昇波動" and not na(preSLSell)
+        slLineSell := line.new(bar_index - 5, preSLSell, bar_index + ext, preSLSell,
+             color=color.new(color.red, 40), width=1, style=line.style_dotted)
+
+if showTPLine
+    if strategy.position_size > 0 and not na(activeTP)
+        tpLineBuy := line.new(bar_index - 5, activeTP, bar_index + ext, activeTP,
+             color=color.new(color.green, 40), width=1, style=line.style_dotted)
+    else if pbState2 == "下落波動" and not na(preTpBuy)
+        tpLineBuy := line.new(bar_index - 5, preTpBuy, bar_index + ext, preTpBuy,
+             color=color.new(color.green, 40), width=1, style=line.style_dotted)
+    if strategy.position_size < 0 and not na(activeTP)
+        tpLineSell := line.new(bar_index - 5, activeTP, bar_index + ext, activeTP,
+             color=color.new(color.green, 40), width=1, style=line.style_dotted)
+    else if pbState2 == "上昇波動" and not na(preTpSell)
+        tpLineSell := line.new(bar_index - 5, preTpSell, bar_index + ext, preTpSell,
+             color=color.new(color.green, 40), width=1, style=line.style_dotted)
+
+// ══════════════════════════════════════════════════════════════
+// 時間フィルター
+// ══════════════════════════════════════════════════════════════
+f_inSignalTime() =>
+    if not useTimeFilter
+        true
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int startM  = startHour * 60 + startMin
+        int endM    = endHour * 60 + endMin
+        startM <= endM ? (current >= startM and current < endM) : (current >= startM or current < endM)
+
+f_isSessionEnd() =>
+    if not closeAtSessionEnd or not useTimeFilter
+        false
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int endM    = endHour * 60 + endMin
+        current >= endM - 5 and current < endM + 5
+
+// ══════════════════════════════════════════════════════════════
+// 逆指値エントリー（毎バー更新）
+// ══════════════════════════════════════════════════════════════
+bool timeOK = f_inSignalTime()
+
+if barstate.isconfirmed and timeOK
+    // ── 下落波動中 → BUY逆指値（転換価格+offset） ──
+    if pbState2 == "下落波動" and not na(entryPriceBuy) and not na(preSLBuy) and not na(preTpBuy)
+        if preSlWidthBuy > 0
+            strategy.entry("Long", strategy.long, stop=entryPriceBuy, comment="SW2転換BUY")
+
+    // ── 上昇波動中 → SELL逆指値（転換価格-offset） ──
+    if pbState2 == "上昇波動" and not na(entryPriceSell) and not na(preSLSell) and not na(preTpSell)
+        if preSlWidthSell > 0
+            strategy.entry("Short", strategy.short, stop=entryPriceSell, comment="SW2転換SELL")
+
+// ══════════════════════════════════════════════════════════════
+// SL/TP管理（エントリーとは分離）
+// ══════════════════════════════════════════════════════════════
+if barstate.isconfirmed
+    if strategy.position_size > 0
+        // activeSL/TP確定済みならそれを使用、未確定なら仮値
+        float useSL = not na(activeSL) ? activeSL : preSLBuy
+        float useTP = not na(activeTP) ? activeTP : preTpBuy
+        if not na(useSL) and not na(useTP)
+            strategy.exit("Long Exit", "Long", stop=useSL, limit=useTP)
+
+    if strategy.position_size < 0
+        float useSL = not na(activeSL) ? activeSL : preSLSell
+        float useTP = not na(activeTP) ? activeTP : preTpSell
+        if not na(useSL) and not na(useTP)
+            strategy.exit("Short Exit", "Short", stop=useSL, limit=useTP)
+
+// ── セッション終了 ──
+if f_isSessionEnd()
+    if strategy.position_size != 0
+        strategy.close_all(comment="セッション終了")
+
+// ══════════════════════════════════════════════════════════════
+// プロット
+// ══════════════════════════════════════════════════════════════
+float atrOff = atrValue * 0.5
+plotshape(peakCond2 ? high + atrOff : na, "SW2 Peak", shape.triangledown,
+     location.absolute, color.new(color.orange, 30), size=size.tiny)
+plotshape(bottomCond2 ? low - atrOff : na, "SW2 Bot", shape.triangleup,
+     location.absolute, color.new(color.teal, 30), size=size.tiny)
+
+// ══════════════════════════════════════════════════════════════
+// テーブル
+// ══════════════════════════════════════════════════════════════
+var table tb = table.new(position.bottom_right, 4, 4, border_width=1)
+
+if barstate.islast
+    table.cell(tb, 0, 0, "", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 0, "価格", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 0, "値幅", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 3, 0, "倍率", bgcolor=#333333, text_color=color.white, text_size=size.small)
+
+    // Row1: 波動 + エントリー水準
+    color pbC = pbState2 == "上昇波動" ? #009600 : pbState2 == "下落波動" ? #C80000 : #646464
+    table.cell(tb, 0, 1, pbState2, bgcolor=pbC, text_color=color.white, text_size=size.small)
+
+    if pbState2 == "下落波動"
+        table.cell(tb, 1, 1, "BUY@" + str.tostring(entryPriceBuy, "#"), bgcolor=#006496, text_color=color.white, text_size=size.small)
+        string slW = not na(preSlWidthBuy) ? str.tostring(preSlWidthBuy, "#") + "pt" : "---"
+        table.cell(tb, 2, 1, "SL幅:" + slW, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    else if pbState2 == "上昇波動"
+        table.cell(tb, 1, 1, "SELL@" + str.tostring(entryPriceSell, "#"), bgcolor=#960000, text_color=color.white, text_size=size.small)
+        string slW = not na(preSlWidthSell) ? str.tostring(preSlWidthSell, "#") + "pt" : "---"
+        table.cell(tb, 2, 1, "SL幅:" + slW, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    else
+        table.cell(tb, 1, 1, "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+        table.cell(tb, 2, 1, "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+    table.cell(tb, 3, 1, "PT×" + str.tostring(tpRatio, "#.#"), bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+    // Row2: SL/TP具体的価格（ポジション中はactive値、待機中はpre値）
+    float dispSL = not na(activeSL) ? activeSL : (pbState2 == "下落波動" ? preSLBuy : preSLSell)
+    float dispTP = not na(activeTP) ? activeTP : (pbState2 == "下落波動" ? preTpBuy : preTpSell)
+    if pbState2 == "下落波動" or pbState2 == "上昇波動"
+        table.cell(tb, 0, 2, "SL", bgcolor=#960000, text_color=color.white, text_size=size.small)
+        table.cell(tb, 1, 2, not na(dispSL) ? str.tostring(dispSL, "#") : "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+        table.cell(tb, 2, 2, "TP", bgcolor=#006400, text_color=color.white, text_size=size.small)
+        table.cell(tb, 3, 2, not na(dispTP) ? str.tostring(dispTP, "#") : "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+    else
+        table.cell(tb, 0, 2, "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+        table.cell(tb, 1, 2, "", bgcolor=#464646, text_color=color.white, text_size=size.small)
+        table.cell(tb, 2, 2, "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+        table.cell(tb, 3, 2, "", bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+    // Row3: ポジション
+    string posT = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    color posC = strategy.position_size > 0 ? #0064C8 : strategy.position_size < 0 ? #C83232 : #646464
+    table.cell(tb, 0, 3, posT, bgcolor=posC, text_color=color.white, text_size=size.small)
+    string pnl = strategy.position_size != 0 ? str.tostring(strategy.openprofit, "#") + "円" : "---"
+    table.cell(tb, 1, 3, pnl, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 3, "SLモード:" + slMode, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    string lbTxt = slMode == "直近Nバー" ? str.tostring(slLookback) + "本" : "SW1"
+    table.cell(tb, 3, 3, lbTxt, bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+// ══════════════════════════════════════════════════════════════
+// アラート
+// ══════════════════════════════════════════════════════════════
+alertcondition(peakCond2, title="SW2 下落転換", message="SW2 下落転換 - {{ticker}} @ {{close}}")
+alertcondition(bottomCond2, title="SW2 上昇転換", message="SW2 上昇転換 - {{ticker}} @ {{close}}")

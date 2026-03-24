@@ -1,0 +1,282 @@
+//@version=5
+indicator("MA Slope - Main Chart v3", overlay=true, max_labels_count=500)
+// ═══════════════════════════════════════════════════
+//  MA設定
+// ═══════════════════════════════════════════════════
+grp1  = "━━ MA 1（最短）━━"
+on1   = input.bool(true,    "表示", group=grp1)
+tp1   = input.string("EMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp1)
+ln1   = input.int(5,        "Period", minval=1, group=grp1)
+sc1   = input.source(close, "Source", group=grp1)
+cu1   = input.color(color.lime,  "上向き色", group=grp1)
+cd1   = input.color(color.red,   "下向き色", group=grp1)
+cf1   = input.color(color.gray,  "フラット色", group=grp1)
+
+grp2  = "━━ MA 2 ━━"
+on2   = input.bool(true,    "表示", group=grp2)
+tp2   = input.string("EMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp2)
+ln2   = input.int(10,       "Period", minval=1, group=grp2)
+sc2   = input.source(close, "Source", group=grp2)
+cu2   = input.color(color.lime,  "上向き色", group=grp2)
+cd2   = input.color(color.red,   "下向き色", group=grp2)
+cf2   = input.color(color.gray,  "フラット色", group=grp2)
+
+grp3  = "━━ MA 3 ━━"
+on3   = input.bool(true,    "表示", group=grp3)
+tp3   = input.string("SMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp3)
+ln3   = input.int(20,       "Period", minval=1, group=grp3)
+sc3   = input.source(close, "Source", group=grp3)
+cu3   = input.color(color.lime,  "上向き色", group=grp3)
+cd3   = input.color(color.red,   "下向き色", group=grp3)
+cf3   = input.color(color.gray,  "フラット色", group=grp3)
+
+grp4  = "━━ MA 4 ━━"
+on4   = input.bool(true,    "表示", group=grp4)
+tp4   = input.string("SMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp4)
+ln4   = input.int(50,       "Period", minval=1, group=grp4)
+sc4   = input.source(close, "Source", group=grp4)
+cu4   = input.color(color.lime,  "上向き色", group=grp4)
+cd4   = input.color(color.red,   "下向き色", group=grp4)
+cf4   = input.color(color.gray,  "フラット色", group=grp4)
+
+grp5  = "━━ MA 5（最長）━━"
+on5   = input.bool(true,    "表示", group=grp5)
+tp5   = input.string("SMA", "Type", options=["SMA","EMA","WMA","RMA","VWMA","DEMA","TEMA","HMA"], group=grp5)
+ln5   = input.int(200,      "Period", minval=1, group=grp5)
+sc5   = input.source(close, "Source", group=grp5)
+cu5   = input.color(color.lime,  "上向き色", group=grp5)
+cd5   = input.color(color.red,   "下向き色", group=grp5)
+cf5   = input.color(color.gray,  "フラット色", group=grp5)
+
+// ═══════════════════════════════════════════════════
+//  傾き・色設定
+// ═══════════════════════════════════════════════════
+grpS       = "━━ 傾き・色設定 ━━"
+slopeLen   = input.int(5,      "傾き算出バー数",             minval=1, maxval=50, group=grpS)
+alphaMin   = input.int(0,      "最大濃度 alpha（0=完全不透明）", minval=0, maxval=50, group=grpS)
+alphaMax   = input.int(40,     "最小濃度 alpha（傾きゼロ付近）", minval=10, maxval=90, group=grpS)
+satThresh  = input.float(0.3,  "飽和ROC%（これ以上で最大濃度）", minval=0.01, step=0.05, group=grpS)
+flatThresh = input.float(0.03, "フラット判定ROC%（これ以下でフラット）", minval=0.001, step=0.01, group=grpS,
+     tooltip="傾きの変化率がこの値以下の場合、フラット（灰色）表示になります")
+maWidth    = input.int(2,      "MA線の太さ",                 minval=1, maxval=5, group=grpS)
+
+// ═══════════════════════════════════════════════════
+//  MA Angle 設定（MA Angle v2 統合）
+// ═══════════════════════════════════════════════════
+grpA        = "━━ MA Angle（角度シグナル）━━"
+angleOn     = input.bool(true,   "角度シグナル表示", group=grpA)
+angleMA     = input.string("MA 3", "角度算出 対象MA",
+     options=["MA 1", "MA 2", "MA 3", "MA 4", "MA 5"], group=grpA)
+angleLookback = input.int(2,     "Angle Period（何本前と比較）", minval=1, maxval=20, group=grpA)
+angleATRPer   = input.int(10,    "ATR Period（正規化用）", minval=1, maxval=50, group=grpA)
+angleLevel    = input.float(3.0, "Angle Level（ノートレードゾーン閾値）", minval=0.1, maxval=30.0, step=0.5, group=grpA,
+     tooltip="この角度以下はフラット判定。UP/DNシグナルは出ません")
+showAngleLabel = input.bool(true, "UP/DNラベル表示", group=grpA)
+barColoring    = input.bool(false, "バー色を角度で変更", group=grpA)
+
+// ═══════════════════════════════════════════════════
+//  MA計算
+// ═══════════════════════════════════════════════════
+dema(float src, int len) =>
+    e = ta.ema(src, len)
+    2 * e - ta.ema(e, len)
+
+tema(float src, int len) =>
+    e1 = ta.ema(src, len)
+    e2 = ta.ema(e1, len)
+    e3 = ta.ema(e2, len)
+    3 * (e1 - e2) + e3
+
+hma(float src, int len) =>
+    ta.wma(2 * ta.wma(src, len / 2) - ta.wma(src, len), math.round(math.sqrt(len)))
+
+calcMA(string t, float s, int l) =>
+    switch t
+        "SMA"  => ta.sma(s, l)
+        "EMA"  => ta.ema(s, l)
+        "WMA"  => ta.wma(s, l)
+        "RMA"  => ta.rma(s, l)
+        "VWMA" => ta.vwma(s, l)
+        "DEMA" => dema(s, l)
+        "TEMA" => tema(s, l)
+        "HMA"  => hma(s, l)
+
+ma1 = calcMA(tp1, sc1, ln1)
+ma2 = calcMA(tp2, sc2, ln2)
+ma3 = calcMA(tp3, sc3, ln3)
+ma4 = calcMA(tp4, sc4, ln4)
+ma5 = calcMA(tp5, sc5, ln5)
+
+// ═══════════════════════════════════════════════════
+//  傾き色（上向き/下向き/フラット 3色 + 強度で濃淡）
+// ═══════════════════════════════════════════════════
+slopeColor(float ma, int n, color colUp, color colDown, color colFlat) =>
+    slope = ma - ma[n]
+    roc   = ma[n] != 0 ? math.abs(slope / ma[n] * 100) : 0.0
+    if roc <= flatThresh
+        color.new(colFlat, 20)
+    else
+        ratio = math.min(roc / satThresh, 1.0)
+        alpha = int(alphaMax - ratio * (alphaMax - alphaMin))
+        slope >= 0 ? color.new(colUp, alpha) : color.new(colDown, alpha)
+
+c1 = slopeColor(ma1, slopeLen, cu1, cd1, cf1)
+c2 = slopeColor(ma2, slopeLen, cu2, cd2, cf2)
+c3 = slopeColor(ma3, slopeLen, cu3, cd3, cf3)
+c4 = slopeColor(ma4, slopeLen, cu4, cd4, cf4)
+c5 = slopeColor(ma5, slopeLen, cu5, cd5, cf5)
+
+// ═══════════════════════════════════════════════════
+//  MAプロット
+// ═══════════════════════════════════════════════════
+plot(on1 ? ma1 : na, "MA 1", c1, maWidth)
+plot(on2 ? ma2 : na, "MA 2", c2, maWidth)
+plot(on3 ? ma3 : na, "MA 3", c3, maWidth)
+plot(on4 ? ma4 : na, "MA 4", c4, maWidth)
+plot(on5 ? ma5 : na, "MA 5", c5, maWidth)
+
+// ═══════════════════════════════════════════════════
+//  全MA傾き一致で背景色（フラットは除外）
+// ═══════════════════════════════════════════════════
+f_slopeState(float ma, int n) =>
+    float slope = ma - ma[n]
+    float roc = ma[n] != 0 ? math.abs(slope / ma[n] * 100) : 0.0
+    roc <= flatThresh ? 0 : slope > 0 ? 1 : -1
+
+st1 = f_slopeState(ma1, slopeLen)
+st2 = f_slopeState(ma2, slopeLen)
+st3 = f_slopeState(ma3, slopeLen)
+st4 = f_slopeState(ma4, slopeLen)
+st5 = f_slopeState(ma5, slopeLen)
+
+allUpActive   = (not on1 or st1 >= 1) and (not on2 or st2 >= 1) and (not on3 or st3 >= 1) and (not on4 or st4 >= 1) and (not on5 or st5 >= 1)
+allDownActive = (not on1 or st1 <= -1) and (not on2 or st2 <= -1) and (not on3 or st3 <= -1) and (not on4 or st4 <= -1) and (not on5 or st5 <= -1)
+anyFlat = (on1 and st1 == 0) or (on2 and st2 == 0) or (on3 and st3 == 0) or (on4 and st4 == 0) or (on5 and st5 == 0)
+
+bgcolor(not anyFlat and allUpActive ? color.new(color.green, 93) : not anyFlat and allDownActive ? color.new(color.red, 93) : na)
+
+// ═══════════════════════════════════════════════════
+//  MA Angle 計算（ATR正規化角度）
+// ═══════════════════════════════════════════════════
+float targetMA = switch angleMA
+    "MA 1" => ma1
+    "MA 2" => ma2
+    "MA 3" => ma3
+    "MA 4" => ma4
+    "MA 5" => ma5
+    => ma3
+
+float maChange        = targetMA - targetMA[angleLookback]
+float angleATR        = ta.atr(angleATRPer)
+float normalizedSlope = angleATR > 0 ? maChange / (angleATR * angleLookback) : 0.0
+float angle           = math.todegrees(math.atan(normalizedSlope))
+
+// ── トレンド判定 ──
+bool isUpTrend      = angle >  angleLevel
+bool isDownTrend    = angle < -angleLevel
+bool isNeutral      = not isUpTrend and not isDownTrend
+bool isAccelerating = math.abs(angle) > math.abs(angle[1])
+
+// ── UP/DNシグナル（状態遷移時のみ） ──
+var bool wasUp   = false
+var bool wasDown = false
+
+bool enterUp   = isUpTrend   and not wasUp
+bool enterDown = isDownTrend and not wasDown
+bool exitUp    = not isUpTrend   and wasUp
+bool exitDown  = not isDownTrend and wasDown
+
+if barstate.isconfirmed
+    wasUp   := isUpTrend
+    wasDown := isDownTrend
+
+// ── 角度に基づくバー色 ──
+color angleBarColor = switch
+    isUpTrend   and isAccelerating     => color.lime
+    isUpTrend   and not isAccelerating => color.new(color.lime, 40)
+    isDownTrend and isAccelerating     => color.red
+    isDownTrend and not isAccelerating => color.new(color.red, 40)
+    => color.new(color.gray, 60)
+
+barcolor(barColoring ? angleBarColor : na)
+
+// ── UP/DNラベル表示 ──
+float atrOff = angleATR * 1.5
+if angleOn and showAngleLabel
+    if enterUp
+        label.new(bar_index, low - atrOff, "UP", style=label.style_label_up,
+             color=color.green, textcolor=color.white, size=size.small)
+    if enterDown
+        label.new(bar_index, high + atrOff, "DN", style=label.style_label_down,
+             color=color.red, textcolor=color.white, size=size.small)
+
+// ═══════════════════════════════════════════════════
+//  テーブル（各MAの傾き状態 + 角度情報）
+// ═══════════════════════════════════════════════════
+var table tb = table.new(position.bottom_right, 4, 7, border_width=1)
+
+if barstate.islast
+    // ヘッダー
+    table.cell(tb, 0, 0, "", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+    table.cell(tb, 1, 0, "傾き", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+    table.cell(tb, 2, 0, "状態", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+    table.cell(tb, 3, 0, "角度", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+
+    // 各MAの角度を個別計算
+    f_angle(float ma, int lb, float atr) =>
+        float chg = ma - ma[lb]
+        float ns  = atr > 0 ? chg / (atr * lb) : 0.0
+        math.todegrees(math.atan(ns))
+
+    float a1 = f_angle(ma1, angleLookback, angleATR)
+    float a2 = f_angle(ma2, angleLookback, angleATR)
+    float a3 = f_angle(ma3, angleLookback, angleATR)
+    float a4 = f_angle(ma4, angleLookback, angleATR)
+    float a5 = f_angle(ma5, angleLookback, angleATR)
+
+    f_stateText(int st) => st > 0 ? "↑" : st < 0 ? "↓" : "→"
+    f_stateBG(int st)   => st > 0 ? #006400 : st < 0 ? #960000 : #646464
+
+    // MA行
+    if on1
+        table.cell(tb, 0, 1, "MA1(" + str.tostring(ln1) + ")", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 1, 1, f_stateText(st1), bgcolor=f_stateBG(st1), text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 2, 1, math.abs(a1) > angleLevel ? (a1 > 0 ? "加速↑" : "加速↓") : "FLAT", bgcolor=math.abs(a1) > angleLevel ? (a1 > 0 ? #006400 : #960000) : #646464, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 3, 1, str.tostring(a1, "#.#") + "°", bgcolor=#464646, text_color=color.white, text_size=size.tiny)
+    if on2
+        table.cell(tb, 0, 2, "MA2(" + str.tostring(ln2) + ")", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 1, 2, f_stateText(st2), bgcolor=f_stateBG(st2), text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 2, 2, math.abs(a2) > angleLevel ? (a2 > 0 ? "加速↑" : "加速↓") : "FLAT", bgcolor=math.abs(a2) > angleLevel ? (a2 > 0 ? #006400 : #960000) : #646464, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 3, 2, str.tostring(a2, "#.#") + "°", bgcolor=#464646, text_color=color.white, text_size=size.tiny)
+    if on3
+        table.cell(tb, 0, 3, "MA3(" + str.tostring(ln3) + ")", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 1, 3, f_stateText(st3), bgcolor=f_stateBG(st3), text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 2, 3, math.abs(a3) > angleLevel ? (a3 > 0 ? "加速↑" : "加速↓") : "FLAT", bgcolor=math.abs(a3) > angleLevel ? (a3 > 0 ? #006400 : #960000) : #646464, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 3, 3, str.tostring(a3, "#.#") + "°", bgcolor=#464646, text_color=color.white, text_size=size.tiny)
+    if on4
+        table.cell(tb, 0, 4, "MA4(" + str.tostring(ln4) + ")", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 1, 4, f_stateText(st4), bgcolor=f_stateBG(st4), text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 2, 4, math.abs(a4) > angleLevel ? (a4 > 0 ? "加速↑" : "加速↓") : "FLAT", bgcolor=math.abs(a4) > angleLevel ? (a4 > 0 ? #006400 : #960000) : #646464, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 3, 4, str.tostring(a4, "#.#") + "°", bgcolor=#464646, text_color=color.white, text_size=size.tiny)
+    if on5
+        table.cell(tb, 0, 5, "MA5(" + str.tostring(ln5) + ")", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 1, 5, f_stateText(st5), bgcolor=f_stateBG(st5), text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 2, 5, math.abs(a5) > angleLevel ? (a5 > 0 ? "加速↑" : "加速↓") : "FLAT", bgcolor=math.abs(a5) > angleLevel ? (a5 > 0 ? #006400 : #960000) : #646464, text_color=color.white, text_size=size.tiny)
+        table.cell(tb, 3, 5, str.tostring(a5, "#.#") + "°", bgcolor=#464646, text_color=color.white, text_size=size.tiny)
+
+    // 総合角度行
+    string totalState = isUpTrend ? "UP" : isDownTrend ? "DN" : "FLAT"
+    color totalBG = isUpTrend ? #006400 : isDownTrend ? #960000 : #646464
+    string accelText = isAccelerating ? "加速" : "減速"
+    table.cell(tb, 0, 6, "総合", bgcolor=#333333, text_color=color.white, text_size=size.tiny)
+    table.cell(tb, 1, 6, totalState, bgcolor=totalBG, text_color=color.white, text_size=size.tiny)
+    table.cell(tb, 2, 6, accelText, bgcolor=#464646, text_color=color.white, text_size=size.tiny)
+    table.cell(tb, 3, 6, str.tostring(angle, "#.#") + "°", bgcolor=#464646, text_color=color.white, text_size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+//  アラート
+// ═══════════════════════════════════════════════════
+alertcondition(enterUp,   "MA角度 上昇突入", "MA angle crossed above threshold - bullish - {{ticker}}")
+alertcondition(enterDown, "MA角度 下降突入", "MA angle crossed below threshold - bearish - {{ticker}}")
+alertcondition(exitUp,    "MA角度 上昇離脱", "MA angle dropped below threshold - {{ticker}}")
+alertcondition(exitDown,  "MA角度 下降離脱", "MA angle rose above threshold - {{ticker}}")

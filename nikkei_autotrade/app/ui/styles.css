@@ -1,0 +1,248 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Consolas', 'Courier New', monospace;
+  background: #0a0e17;
+  color: #c8d6e5;
+  font-size: 13px;
+}
+
+/* ── ヘッダー ── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #141926;
+  border-bottom: 1px solid #1e2a3a;
+}
+
+.header-left {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.header h1 {
+  font-size: 15px;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.status-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-ok { background: #065f46; color: #6ee7b7; }
+.badge-ng { background: #7f1d1d; color: #fca5a5; }
+.badge-warn { background: #78350f; color: #fcd34d; }
+.badge-info { background: #1e3a5f; color: #93c5fd; }
+
+.controls {
+  display: flex;
+  gap: 6px;
+}
+
+.controls button {
+  padding: 4px 12px;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  background: #1e293b;
+  color: #c8d6e5;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.controls button:hover { background: #334155; }
+.controls button.btn-danger { border-color: #dc2626; color: #fca5a5; }
+.controls button.btn-danger:hover { background: #7f1d1d; }
+.controls button.btn-success { border-color: #16a34a; color: #6ee7b7; }
+.controls button.btn-success:hover { background: #065f46; }
+
+/* ── ギャップ警告バナー ── */
+.gap-banner {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.gap-banner.warning {
+  background: #78350f;
+  color: #fcd34d;
+  border-bottom: 2px solid #f59e0b;
+}
+
+.gap-banner.recovered {
+  background: #065f46;
+  color: #6ee7b7;
+  border-bottom: 2px solid #10b981;
+}
+
+/* ── レイアウト ── */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: 1fr auto;
+  gap: 1px;
+  height: calc(100vh - 44px);
+  background: #1e2a3a;
+}
+
+.panel {
+  background: #0f1724;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.panel h3 {
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #1e2a3a;
+  padding-bottom: 4px;
+}
+
+/* ── チャートパネル ── */
+.chart-panel {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+#chart-container {
+  width: 100%;
+  height: calc(100% - 30px);
+  background: #0a0e17;
+  border: 1px solid #1e2a3a;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  position: relative;
+}
+
+/* ── 戦略パネル ── */
+.strategy-panel {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 4px 8px;
+  margin-bottom: 12px;
+}
+
+.info-label {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.info-value {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.info-value.buy { color: #34d399; }
+.info-value.sell { color: #f87171; }
+.info-value.neutral { color: #94a3b8; }
+.info-value.active { color: #fbbf24; }
+
+/* ── セットアップ表示 ── */
+.setup-box {
+  border: 1px solid #1e2a3a;
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.setup-box.buy-active {
+  border-color: #065f46;
+  background: rgba(6, 95, 70, 0.15);
+}
+
+.setup-box.sell-active {
+  border-color: #7f1d1d;
+  background: rgba(127, 29, 29, 0.15);
+}
+
+.setup-title {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* ── 注文・建玉パネル ── */
+.order-panel {
+  grid-row: 2;
+  grid-column: 1;
+  max-height: 200px;
+}
+
+/* ── ログパネル ── */
+.log-panel {
+  grid-row: 2;
+  grid-column: 2;
+  max-height: 200px;
+}
+
+.log-entries {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+.log-entry {
+  border-bottom: 1px solid #0f1724;
+  padding: 2px 0;
+}
+
+.log-time { color: #475569; }
+.log-cat { color: #60a5fa; font-weight: 600; }
+.log-cat-bar { color: #34d399; }
+.log-cat-plan { color: #fbbf24; }
+.log-cat-order { color: #f87171; }
+.log-cat-control { color: #c084fc; }
+
+/* ── ポジション表示 ── */
+.position-info {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 6px 8px;
+  background: #141926;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.position-info.has-position {
+  border: 1px solid #334155;
+}
+
+.pos-side {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.pos-side.buy { color: #34d399; }
+.pos-side.sell { color: #f87171; }
+
+.pnl-value.positive { color: #34d399; }
+.pnl-value.negative { color: #f87171; }
+
+.be-status { font-size: 11px; color: #475569; }
+.be-status.be-active { color: #fbbf24; font-weight: 600; }

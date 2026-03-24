@@ -1,0 +1,327 @@
+//@version=5
+strategy("SwingFusion Strategy v3.0 - MA Bounce", overlay=true,
+     initial_capital=1000000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_order, commission_value=50,
+     slippage=5, pyramiding=0, calc_on_every_tick=false,
+     process_orders_on_close=true, close_entries_rule="ANY",
+     max_labels_count=500, max_lines_count=500)
+
+// ══════════════════════════════════════════════════════════════
+// ① スイング設定
+// ══════════════════════════════════════════════════════════════
+length1 = input.int(7, "Swing1 ルックバック", minval=1, group="① スイング設定")
+
+// ══════════════════════════════════════════════════════════════
+// ② 移動平均線
+// ══════════════════════════════════════════════════════════════
+smaLen1 = input.int(20,  "SMA1期間 (主要)", minval=1, group="② 移動平均線")
+smaLen2 = input.int(60,  "SMA2期間 (中期)", minval=1, group="② 移動平均線")
+smaLen3 = input.int(240, "SMA3期間 (長期)", minval=1, group="② 移動平均線")
+
+sma1 = ta.sma(close, smaLen1)
+sma2 = ta.sma(close, smaLen2)
+sma3 = ta.sma(close, smaLen3)
+
+plot(sma1, "SMA1", color.purple, 2)
+plot(sma2, "SMA2", color.orange, 2)
+plot(sma3, "SMA3", color.red, 2)
+
+// ══════════════════════════════════════════════════════════════
+// ③ MAバウンス設定
+// ══════════════════════════════════════════════════════════════
+grpBounce = "③ MAバウンス設定"
+bounceMA = input.string("SMA2 (60)", "バウンス基準MA",
+     options=["SMA1 (20)", "SMA2 (60)", "SMA3 (240)"], group=grpBounce)
+bounceZone = input.float(1.5, "MA接近ゾーン (ATR倍率)", minval=0.3, maxval=5.0, step=0.1, group=grpBounce)
+requireRecentTouch = input.bool(true, "直近Nバー以内にMA接触を要求", group=grpBounce)
+touchLookback = input.int(10, "MA接触ルックバック（バー数）", minval=1, maxval=50, group=grpBounce)
+requireCloseDirection = input.bool(true, "終値がMA順方向を要求", group=grpBounce)
+
+// ══════════════════════════════════════════════════════════════
+// ④ トレンドフィルター
+// ══════════════════════════════════════════════════════════════
+grpTrend = "④ トレンドフィルター"
+trendMode = input.string("MA傾き", "トレンド判定方式",
+     options=["MA傾き", "価格位置 (close vs MA)", "両方"], group=grpTrend)
+trendMA = input.string("SMA3 (240)", "トレンド基準MA",
+     options=["SMA2 (60)", "SMA3 (240)"], group=grpTrend)
+slopeLen = input.int(5, "傾き算出バー数", minval=1, maxval=50, group=grpTrend)
+
+// ══════════════════════════════════════════════════════════════
+// ⑤ エグジット設定
+// ══════════════════════════════════════════════════════════════
+grpExit = "⑤ エグジット設定"
+atrPeriod       = input.int(14, "ATR期間", minval=1, group=grpExit)
+slMode          = input.string("SW1レベル", "損切りモード",
+     options=["ATR固定", "SW1レベル"], group=grpExit)
+slMultiplier    = input.float(1.5, "ATR固定SL (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+swingSLPadding  = input.float(0.3, "SW1レベルSL余裕 (ATR倍率)", minval=0.0, maxval=2.0, step=0.1, group=grpExit)
+slMaxATR        = input.float(3.0, "SL上限 (ATR倍率)", minval=1.0, maxval=10.0, step=0.5, group=grpExit)
+tpMultiplier    = input.float(3.0, "利確 (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+useTrailing     = input.bool(false, "トレーリングストップ", group=grpExit)
+trailMultiplier = input.float(2.0, "トレーリング (ATR倍率)", minval=0.5, maxval=10.0, step=0.5, group=grpExit)
+trailOffsetMult = input.float(1.0, "トレールオフセット (ATR倍率)", minval=0.2, maxval=5.0, step=0.1, group=grpExit)
+exitOnPBReverse = input.bool(true, "SW1逆波動で決済", group=grpExit)
+
+// ══════════════════════════════════════════════════════════════
+// ⑥ 時間フィルター
+// ══════════════════════════════════════════════════════════════
+grpTime = "⑥ 時間フィルター"
+useTimeFilter     = input.bool(true, "時間制限 ON/OFF", group=grpTime)
+startHour         = input.int(8,  "開始（時）", minval=0, maxval=23, group=grpTime)
+startMin          = input.int(45, "開始（分）", minval=0, maxval=59, group=grpTime)
+endHour           = input.int(15, "終了（時）", minval=0, maxval=23, group=grpTime)
+endMin            = input.int(30, "終了（分）", minval=0, maxval=59, group=grpTime)
+closeAtSessionEnd = input.bool(true, "セッション終了時に全決済", group=grpTime)
+useOpenFilter     = input.bool(true, "寄付き除外 ON/OFF", group=grpTime)
+openExcludeMin    = input.int(15, "寄付き除外（分）", minval=5, maxval=60, step=5, group=grpTime)
+
+// ══════════════════════════════════════════════════════════════
+// 計算
+// ══════════════════════════════════════════════════════════════
+atrValue = ta.atr(atrPeriod)
+
+float bMA = switch bounceMA
+    "SMA1 (20)"  => sma1
+    "SMA2 (60)"  => sma2
+    "SMA3 (240)" => sma3
+    => sma2
+
+float tMA = switch trendMA
+    "SMA2 (60)"  => sma2
+    "SMA3 (240)" => sma3
+    => sma3
+
+float tMASlope = tMA - tMA[slopeLen]
+
+// ══════════════════════════════════════════════════════════════
+// 時間フィルター
+// ══════════════════════════════════════════════════════════════
+f_inSignalTime() =>
+    if not useTimeFilter
+        true
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int startM  = startHour * 60 + startMin
+        int endM    = endHour * 60 + endMin
+        bool inSession = startM <= endM ? (current >= startM and current < endM) : (current >= startM or current < endM)
+        bool afterOpen = not useOpenFilter or (current >= startM + openExcludeMin)
+        inSession and afterOpen
+
+f_isSessionEnd() =>
+    if not closeAtSessionEnd or not useTimeFilter
+        false
+    else
+        int h = hour(time, "Asia/Tokyo")
+        int m = minute(time, "Asia/Tokyo")
+        int current = h * 60 + m
+        int endM    = endHour * 60 + endMin
+        current >= endM - 5 and current < endM + 5
+
+// ══════════════════════════════════════════════════════════════
+// MA接近・接触判定
+// ══════════════════════════════════════════════════════════════
+float distToMA = not na(bMA) ? math.abs(close - bMA) : na
+float zoneWidth = atrValue * bounceZone
+bool inMAZone = not na(distToMA) and not na(zoneWidth) and distToMA <= zoneWidth
+
+// 直近Nバー以内にMAを跨いだか（ヒゲでもOK）
+f_recentMATouch(float ma, int lookback) =>
+    bool touched = false
+    if not na(ma)
+        for i = 0 to lookback - 1
+            if low[i] <= ma[i] and high[i] >= ma[i]
+                touched := true
+                break
+    touched
+
+bool recentTouch = not requireRecentTouch or f_recentMATouch(bMA, touchLookback)
+
+// 終値がMA順方向
+bool closeBuyOK  = not requireCloseDirection or (not na(bMA) and close > bMA)
+bool closeSellOK = not requireCloseDirection or (not na(bMA) and close < bMA)
+
+// ══════════════════════════════════════════════════════════════
+// トレンドフィルター
+// ══════════════════════════════════════════════════════════════
+bool trendBuyOK  = false
+bool trendSellOK = false
+
+if trendMode == "MA傾き"
+    trendBuyOK  := tMASlope > 0
+    trendSellOK := tMASlope < 0
+else if trendMode == "価格位置 (close vs MA)"
+    trendBuyOK  := not na(tMA) and close > tMA
+    trendSellOK := not na(tMA) and close < tMA
+else // 両方
+    trendBuyOK  := tMASlope > 0 and (not na(tMA) and close > tMA)
+    trendSellOK := tMASlope < 0 and (not na(tMA) and close < tMA)
+
+// ══════════════════════════════════════════════════════════════
+// Swing1 P&Bロジック
+// ══════════════════════════════════════════════════════════════
+var string pbState1 = "---"
+var string lastPBSignal1 = na
+
+peakCondition1   = low < ta.lowest(low, length1)[1] and lastPBSignal1 != "peak"
+bottomCondition1 = high > ta.highest(high, length1)[1] and lastPBSignal1 != "bottom"
+
+if peakCondition1
+    lastPBSignal1 := "peak"
+    pbState1      := "下落波動"
+if bottomCondition1
+    lastPBSignal1 := "bottom"
+    pbState1      := "上昇波動"
+
+// ── SW1スイング確定（SLレベル用にピーク/ボトム記録） ──
+var bool   ssb_findingMin1 = true, var bool ssb_findingMax1 = false
+var float  ssb_minPrice1 = na, var int ssb_minIdx1 = na
+var float  ssb_maxPrice1 = na, var int ssb_maxIdx1 = na
+var float  prevPeak1 = na, var float prevBot1 = na
+
+if barstate.isconfirmed
+    if ssb_findingMin1 and (na(ssb_minPrice1) or low < ssb_minPrice1)
+        ssb_minPrice1 := low
+        ssb_minIdx1   := bar_index
+    if ssb_findingMax1 and (na(ssb_maxPrice1) or high > ssb_maxPrice1)
+        ssb_maxPrice1 := high
+        ssb_maxIdx1   := bar_index
+
+    peak_conf1   = ssb_findingMax1 and low < ta.lowest(low, length1)[1]
+    bottom_conf1 = ssb_findingMin1 and high > ta.highest(high, length1)[1]
+
+    if peak_conf1
+        prevPeak1       := ssb_maxPrice1
+        ssb_findingMax1 := false
+        ssb_findingMin1 := true
+        ssb_minPrice1   := low
+        ssb_minIdx1     := bar_index
+
+    if bottom_conf1
+        prevBot1        := ssb_minPrice1
+        ssb_findingMin1 := false
+        ssb_findingMax1 := true
+        ssb_maxPrice1   := high
+        ssb_maxIdx1     := bar_index
+
+// ══════════════════════════════════════════════════════════════
+// エントリーシグナル
+// ══════════════════════════════════════════════════════════════
+bool timeOK = f_inSignalTime()
+
+bool entryBuy  = false
+bool entrySell = false
+
+if barstate.isconfirmed and timeOK and strategy.position_size == 0
+    // ── 買い: SW1 Bottom（上昇波動転換）+ MAゾーン内 + トレンドOK ──
+    if bottomCondition1 and inMAZone and recentTouch and closeBuyOK and trendBuyOK
+        entryBuy := true
+
+    // ── 売り: SW1 Peak（下落波動転換）+ MAゾーン内 + トレンドOK ──
+    if peakCondition1 and inMAZone and recentTouch and closeSellOK and trendSellOK
+        entrySell := true
+
+// ══════════════════════════════════════════════════════════════
+// エントリー・エグジット
+// ══════════════════════════════════════════════════════════════
+if entryBuy
+    float sl = slMode == "SW1レベル" and not na(prevBot1) ?
+         prevBot1 - atrValue * swingSLPadding : close - atrValue * slMultiplier
+    sl := math.max(sl, close - atrValue * slMaxATR)
+    float tp = close + atrValue * tpMultiplier
+    strategy.entry("Long", strategy.long, comment="Bounce BUY")
+    strategy.exit("Long Exit", "Long", stop=sl, limit=tp,
+         trail_points=useTrailing ? atrValue * trailMultiplier : na,
+         trail_offset=useTrailing ? atrValue * trailOffsetMult : na)
+
+if entrySell
+    float sl = slMode == "SW1レベル" and not na(prevPeak1) ?
+         prevPeak1 + atrValue * swingSLPadding : close + atrValue * slMultiplier
+    sl := math.min(sl, close + atrValue * slMaxATR)
+    float tp = close - atrValue * tpMultiplier
+    strategy.entry("Short", strategy.short, comment="Bounce SELL")
+    strategy.exit("Short Exit", "Short", stop=sl, limit=tp,
+         trail_points=useTrailing ? atrValue * trailMultiplier : na,
+         trail_offset=useTrailing ? atrValue * trailOffsetMult : na)
+
+// ── SW1逆波動で決済 ──
+if exitOnPBReverse and barstate.isconfirmed
+    if strategy.position_size > 0 and peakCondition1
+        strategy.close("Long", comment="SW1下落転換")
+    if strategy.position_size < 0 and bottomCondition1
+        strategy.close("Short", comment="SW1上昇転換")
+
+// ── セッション終了 ──
+if f_isSessionEnd()
+    if strategy.position_size != 0
+        strategy.close_all(comment="セッション終了")
+
+// ══════════════════════════════════════════════════════════════
+// プロット
+// ══════════════════════════════════════════════════════════════
+plotshape(entryBuy, "Bounce BUY", shape.labelup, location.belowbar,
+     color.blue, size=size.normal, text="BUY")
+plotshape(entrySell, "Bounce SELL", shape.labeldown, location.abovebar,
+     color.red, size=size.normal, text="SELL")
+
+// ── MAゾーン内のP&B（エントリー対象外も表示） ──
+bool pbBuyCandidate  = bottomCondition1 and inMAZone and not entryBuy
+bool pbSellCandidate = peakCondition1 and inMAZone and not entrySell
+plotshape(pbBuyCandidate ? low : na, "候補 Bot", shape.triangleup,
+     location.absolute, color.new(color.teal, 60), size=size.tiny)
+plotshape(pbSellCandidate ? high : na, "候補 Peak", shape.triangledown,
+     location.absolute, color.new(color.orange, 60), size=size.tiny)
+
+// ── 全P&Bシグナル（薄く） ──
+plotshape(peakCondition1 and not inMAZone ? high : na, "SW1 Peak(外)", shape.triangledown,
+     location.absolute, color.new(color.orange, 85), size=size.tiny)
+plotshape(bottomCondition1 and not inMAZone ? low : na, "SW1 Bot(外)", shape.triangleup,
+     location.absolute, color.new(color.teal, 85), size=size.tiny)
+
+// ── MAゾーン帯 ──
+float zHi = not na(bMA) ? bMA + zoneWidth : na
+float zLo = not na(bMA) ? bMA - zoneWidth : na
+pHi = plot(zHi, "Zone Hi", color.new(color.yellow, 85))
+pLo = plot(zLo, "Zone Lo", color.new(color.yellow, 85))
+fill(pHi, pLo, color=color.new(color.yellow, 93), title="MAゾーン")
+
+// ── トレンド背景色 ──
+color trendBG = trendBuyOK ? color.new(color.blue, 95) :
+     trendSellOK ? color.new(color.red, 95) : na
+bgcolor(trendBG, title="トレンド方向")
+
+// ══════════════════════════════════════════════════════════════
+// テーブル
+// ══════════════════════════════════════════════════════════════
+var table tb = table.new(position.bottom_right, 4, 3, border_width=1)
+
+if barstate.islast
+    table.cell(tb, 0, 0, "波動", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 0, "MAゾーン", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 0, "トレンド", bgcolor=#333333, text_color=color.white, text_size=size.small)
+    table.cell(tb, 3, 0, "MA距離", bgcolor=#333333, text_color=color.white, text_size=size.small)
+
+    color pbC = pbState1 == "上昇波動" ? #009600 : pbState1 == "下落波動" ? #C80000 : #646464
+    table.cell(tb, 0, 1, pbState1, bgcolor=pbC, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 1, inMAZone ? "圏内" : "圏外", bgcolor=inMAZone ? #B8860B : #464646, text_color=color.white, text_size=size.small)
+    string trendText = trendBuyOK ? "BUY OK" : trendSellOK ? "SELL OK" : "---"
+    color trendC = trendBuyOK ? #006400 : trendSellOK ? #960000 : #646464
+    table.cell(tb, 2, 1, trendText, bgcolor=trendC, text_color=color.white, text_size=size.small)
+    float maDist = not na(distToMA) and atrValue > 0 ? distToMA / atrValue : na
+    table.cell(tb, 3, 1, not na(maDist) ? str.tostring(maDist, "#.#") + "ATR" : "---", bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+    string posT = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    color posC = strategy.position_size > 0 ? #0064C8 : strategy.position_size < 0 ? #C83232 : #646464
+    string pnl = strategy.position_size != 0 ? str.tostring(strategy.openprofit, "#") : "---"
+    table.cell(tb, 0, 2, posT, bgcolor=posC, text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 2, pnl, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(tb, 2, 2, "SL:" + slMode, bgcolor=#464646, text_color=color.white, text_size=size.small)
+    table.cell(tb, 3, 2, "RR 1:" + str.tostring(tpMultiplier / slMultiplier, "#.#"), bgcolor=#464646, text_color=color.white, text_size=size.small)
+
+// ══════════════════════════════════════════════════════════════
+// アラート
+// ══════════════════════════════════════════════════════════════
+alertcondition(entryBuy,  title="Bounce BUY",  message="Bounce BUY - {{ticker}} @ {{close}}")
+alertcondition(entrySell, title="Bounce SELL", message="Bounce SELL - {{ticker}} @ {{close}}")

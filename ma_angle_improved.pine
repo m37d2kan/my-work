@@ -1,0 +1,86 @@
+//@version=6
+indicator("MA Angle v2", shorttitle="MA Angle v2", overlay=false)
+
+// ─────────────────────────────────────────
+//  入力
+// ─────────────────────────────────────────
+maType     = input.string("SMA", "MA Type", options=["SMA", "EMA", "WMA", "VWMA", "HMA"])
+maLength   = input.int(20,  "MA Length",     minval=1)
+lookback   = input.int(2,   "Angle Period",  minval=1, tooltip="何本前と比較するか")
+atrPeriod  = input.int(10,  "ATR Period",    minval=1, tooltip="ATRで正規化して銘柄間比較可能にする")
+angleLevel = input.float(3, "Angle Level",   minval=0, tooltip="この角度以下はノートレードゾーン(グレー)")
+amplify    = input.float(5, "Display Scale", minval=1, tooltip="表示の倍率（計算には影響なし）")
+barColoring = input.bool(false, "Bar Color")
+
+// ─────────────────────────────────────────
+//  MA計算
+// ─────────────────────────────────────────
+getMA(src, len, type) =>
+    switch type
+        "EMA"  => ta.ema(src, len)
+        "WMA"  => ta.wma(src, len)
+        "VWMA" => ta.vwma(src, len)
+        "HMA"  => ta.hma(src, len)
+        =>        ta.sma(src, len)
+
+ma = getMA(close, maLength, maType)
+
+// ─────────────────────────────────────────
+//  角度計算（ATR正規化）
+//
+//  1. MAの変化量 = ma - ma[lookback]
+//  2. ATRで割る  = 銘柄・時間足に依存しない相対値に変換
+//  3. atanで角度(-90°〜+90°)に変換
+// ─────────────────────────────────────────
+maChange        = ma - ma[lookback]
+normalizedSlope = maChange / (ta.atr(atrPeriod) * lookback)
+angle           = math.todegrees(math.atan(normalizedSlope))
+displayAngle    = angle * amplify  // 表示用に増幅
+
+// ─────────────────────────────────────────
+//  トレンド判定
+// ─────────────────────────────────────────
+isUpTrend   = angle >  angleLevel
+isDownTrend = angle < -angleLevel
+isNeutral   = not isUpTrend and not isDownTrend
+isAccelerating = math.abs(angle) > math.abs(angle[1])
+
+// ─────────────────────────────────────────
+//  色分け（加速=鮮明、減速=薄い、中立=グレー）
+// ─────────────────────────────────────────
+plotColor = switch
+    isUpTrend   and isAccelerating     => color.lime
+    isUpTrend   and not isAccelerating => color.new(color.lime, 40)
+    isDownTrend and isAccelerating     => color.red
+    isDownTrend and not isAccelerating => color.new(color.red, 40)
+    => color.new(color.gray, 60)
+
+// ─────────────────────────────────────────
+//  描画
+// ─────────────────────────────────────────
+plot(displayAngle, "Angle", plotColor, 4, plot.style_histogram)
+plot(displayAngle, "Angle Line", plotColor, 2, plot.style_line)
+hline(0, "Zero", color.gray, hline.style_solid)
+hline(angleLevel * amplify,  "Upper", color.new(color.green, 70), hline.style_dotted)
+hline(-angleLevel * amplify, "Lower", color.new(color.red, 70),   hline.style_dotted)
+
+barcolor(barColoring ? plotColor : na)
+
+// ─────────────────────────────────────────
+//  アラート（UP/DNのみ、×は削除）
+// ─────────────────────────────────────────
+var bool wasUp   = false
+var bool wasDown = false
+
+enterUp   = isUpTrend   and not wasUp
+enterDown = isDownTrend and not wasDown
+
+if barstate.isconfirmed
+    wasUp   := isUpTrend
+    wasDown := isDownTrend
+
+plotshape(enterUp,   "UP",   shape.labelup,   location.bottom, color.green, text="UP")
+plotshape(enterDown, "DN",   shape.labeldown,  location.top,    color.red,   text="DN")
+
+alertcondition(enterUp,   "MA角度 上昇突入", "MA angle crossed above threshold - bullish")
+alertcondition(enterDown, "MA角度 下降突入", "MA angle crossed below threshold - bearish")
