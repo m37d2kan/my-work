@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:kabucom.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:gitlab.com)"
+    ]
+  }
+}
