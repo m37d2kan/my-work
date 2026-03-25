@@ -1,0 +1,478 @@
+//@version=5
+indicator("Base1 Indicator", overlay=true, max_labels_count=500, max_lines_count=500)
+// ══════════════════════════════════════════════════════════════
+// ① 移動平均線 (SMA) + 傾斜色（MA個別設定）
+// ══════════════════════════════════════════════════════════════
+// ── SMA1 ──
+grpMA1       = "① SMA1"
+showSMA1     = input.bool(true, "表示", group=grpMA1)
+smaLength1   = input.int(20, "期間", minval=1, group=grpMA1)
+smaColor1    = input.color(color.purple, "固定色", group=grpMA1)
+smaSlope1    = input.bool(true, "傾斜色ON", group=grpMA1)
+smaUp1       = input.color(color.lime,   "上昇色", group=grpMA1)
+smaDn1       = input.color(color.red,    "下降色", group=grpMA1)
+smaFl1       = input.color(color.gray,   "フラット色", group=grpMA1)
+// ── SMA2 ──
+grpMA2       = "① SMA2"
+showSMA2     = input.bool(true, "表示", group=grpMA2)
+smaLength2   = input.int(94, "期間", minval=1, group=grpMA2)
+smaColor2    = input.color(color.orange, "固定色", group=grpMA2)
+smaSlope2    = input.bool(true, "傾斜色ON", group=grpMA2)
+smaUp2       = input.color(color.lime,   "上昇色", group=grpMA2)
+smaDn2       = input.color(color.red,    "下降色", group=grpMA2)
+smaFl2       = input.color(color.blue,   "フラット色", group=grpMA2)
+// ── SMA3 ──
+grpMA3       = "① SMA3"
+showSMA3     = input.bool(true, "表示", group=grpMA3)
+smaLength3   = input.int(200, "期間", minval=1, group=grpMA3)
+smaColor3    = input.color(color.red, "固定色", group=grpMA3)
+// ── SMA4 ──
+grpMA4       = "① SMA4"
+showSMA4     = input.bool(true, "表示", group=grpMA4)
+smaLength4   = input.int(480, "期間", minval=1, group=grpMA4)
+smaColor4    = input.color(color.green, "固定色", group=grpMA4)
+// ── SMA5 ──
+grpMA5       = "① SMA5"
+showSMA5     = input.bool(true, "表示", group=grpMA5)
+smaLength5   = input.int(600, "期間", minval=1, group=grpMA5)
+smaColor5    = input.color(color.blue, "固定色", group=grpMA5)
+// ── MA共通設定 ──
+grpMACommon   = "① MA共通"
+smaLineWidth  = input.int(2, "線の太さ", minval=1, maxval=4, group=grpMACommon)
+showMABand    = input.bool(true, "MA帯表示", group=grpMACommon)
+maBandColor   = input.color(color.new(color.gray, 85), "MA帯 色", group=grpMACommon)
+// ── MA傾斜色設定（共通パラメータ） ──
+grpSlope        = "①-B MA傾斜設定"
+useSlopeColor   = input.bool(true, "傾斜色モード ON/OFF", group=grpSlope,
+     tooltip="ONで各MAの上昇/下降/フラット色を使用。OFFで固定色")
+slopeLenInput   = input.int(5, "傾き算出バー数", minval=1, maxval=50, group=grpSlope)
+slopeAlphaMin   = input.int(0,  "最大濃度 alpha", minval=0, maxval=50, group=grpSlope)
+slopeAlphaMax   = input.int(40, "最小濃度 alpha", minval=10, maxval=90, group=grpSlope)
+slopeSatThresh  = input.float(0.3, "飽和ROC%", minval=0.01, step=0.05, group=grpSlope)
+slopeFlatThresh = input.float(0.03, "フラット判定ROC%", minval=0.001, step=0.01, group=grpSlope,
+     tooltip="この値以下でフラット色表示")
+showSlopeBG     = input.bool(true, "全MA傾き一致で背景色", group=grpSlope)
+// ══════════════════════════════════════════════════════════════
+// ② スイングライン
+// ══════════════════════════════════════════════════════════════
+length1      = input.int(5, "Swing1 Look-back Period", minval=1, group="② スイングライン")
+lineWidth1   = input.int(1, "Swing1 line width", minval=1, maxval=4, group="② スイングライン")
+lineColor1   = input.color(color.black, "Swing1 色", group="② スイングライン")
+showSwing1   = input.bool(true, "Swing1 表示", group="② スイングライン")
+showPriceLabel1 = input.bool(true, "価格ラベル表示 (Swing1)", group="② スイングライン")
+length2      = input.int(20, "Swing2 Look-back Period", minval=1, group="② スイングライン")
+lineWidth2   = input.int(1, "Swing2 line width", minval=1, maxval=4, group="② スイングライン")
+lineColor2   = input.color(color.purple, "Swing2 色", group="② スイングライン")
+showSwing2   = input.bool(true, "Swing2 表示", group="② スイングライン")
+showB1P1Lines1 = input.bool(true, "B1/P1ライン表示 (Swing1)", group="② スイングライン")
+showB1P1Lines2 = input.bool(true, "B1/P1ライン表示 (Swing2)", group="② スイングライン")
+noiseFilterATR = input.float(0.3, "P&Bノイズフィルタ(ATR倍率)", minval=0, maxval=2.0, step=0.05, group="② スイングライン",
+     tooltip="高値/安値更新がATR×この値未満の場合、押安/戻高をクリアしない。0=従来動作")
+// ══════════════════════════════════════════════════════════════
+// ③ 表示設定
+// ══════════════════════════════════════════════════════════════
+atrPeriod             = input.int(14, "ATR期間", minval=1, maxval=100, group="③ 表示設定")
+signalOffset1Mult     = input.float(0.5, "P&B Offset 1 (ATR倍率)", minval=0.1, maxval=5.0, step=0.1, group="③ 表示設定")
+signalOffset2Mult     = input.float(0.8, "P&B Offset 2 (ATR倍率)", minval=0.1, maxval=5.0, step=0.1, group="③ 表示設定")
+priceLabelOffsetMult  = input.float(0.3, "価格ラベル オフセット(ATR倍率)", minval=0.1, maxval=5.0, step=0.1, group="③ 表示設定")
+showPB1    = input.bool(true, "P&B Signal表示 (Swing1)", group="③ 表示設定")
+pbCol1Up   = input.color(color.teal, "P&B Long色 (Swing1)", group="③ 表示設定")
+pbCol1Down = input.color(color.orange, "P&B Short色 (Swing1)", group="③ 表示設定")
+showPB2    = input.bool(true, "P&B Signal表示 (Swing2)", group="③ 表示設定")
+pbCol2Up   = input.color(color.teal, "P&B Long色 (Swing2)", group="③ 表示設定")
+pbCol2Down = input.color(color.purple, "P&B Short色 (Swing2)", group="③ 表示設定")
+labelOffset = input.float(0.1, "ラベルオフセット(%)", minval=0.1, maxval=2.0, step=0.1, group="③ 表示設定")
+// ══════════════════════════════════════════════════════════════
+// ⑥ テーブル・ゾーン表示
+// ══════════════════════════════════════════════════════════════
+showTrendTable = input.bool(true, "トレンドテーブル表示", group="⑥ テーブル・ゾーン表示")
+tablePosition  = input.string("bottom_right", "トレンドテーブル位置", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group="⑥ テーブル・ゾーン表示")
+// ══════════════════════════════════════════════════════════════
+// SMA計算・プロット（傾斜色対応）
+// ══════════════════════════════════════════════════════════════
+sma1 = ta.sma(close, smaLength1)
+sma2 = ta.sma(close, smaLength2)
+sma3 = ta.sma(close, smaLength3)
+sma4 = ta.sma(close, smaLength4)
+sma5 = ta.sma(close, smaLength5)
+// ── 傾斜色計算関数 ──
+f_slopeColor(float ma, int n, color colUp, color colDown, color colFlat, color colFixed, bool useSlope) =>
+    if not useSlope
+        colFixed
+    else
+        float slope = ma - ma[n]
+        float roc   = ma[n] != 0 ? math.abs(slope / ma[n] * 100) : 0.0
+        if roc <= slopeFlatThresh
+            color.new(colFlat, 20)
+        else
+            float ratio = math.min(roc / slopeSatThresh, 1.0)
+            int alpha = int(slopeAlphaMax - ratio * (slopeAlphaMax - slopeAlphaMin))
+            slope >= 0 ? color.new(colUp, alpha) : color.new(colDown, alpha)
+color sc1 = f_slopeColor(sma1, slopeLenInput, smaUp1, smaDn1, smaFl1, smaColor1, useSlopeColor and smaSlope1)
+color sc2 = f_slopeColor(sma2, slopeLenInput, smaUp2, smaDn2, smaFl2, smaColor2, useSlopeColor and smaSlope2)
+color sc3 = smaColor3
+color sc4 = smaColor4
+color sc5 = smaColor5
+plot(showSMA1 ? sma1 : na, "SMA1", sc1, smaLineWidth)
+plot(showSMA2 ? sma2 : na, "SMA2", sc2, smaLineWidth)
+plot(showSMA3 ? sma3 : na, "SMA3", sc3, smaLineWidth)
+plot(showSMA4 ? sma4 : na, "SMA4", sc4, smaLineWidth)
+plot(showSMA5 ? sma5 : na, "SMA5", sc5, smaLineWidth)
+smaUpper = math.max(sma1, math.max(sma2, math.max(sma3, math.max(sma4, sma5))))
+smaLower = math.min(sma1, math.min(sma2, math.min(sma3, math.min(sma4, sma5))))
+p_upper  = plot(showMABand ? smaUpper : na, "MA Band Upper", color=color.new(color.gray, 100))
+p_lower  = plot(showMABand ? smaLower : na, "MA Band Lower", color=color.new(color.gray, 100))
+fill(p_upper, p_lower, color=showMABand ? maBandColor : na)
+// ── 全MA傾き一致で背景色 ──
+f_slopeState(float ma, int n) =>
+    float slope = ma - ma[n]
+    float roc = ma[n] != 0 ? math.abs(slope / ma[n] * 100) : 0.0
+    roc <= slopeFlatThresh ? 0 : slope > 0 ? 1 : -1
+int sst1 = f_slopeState(sma1, slopeLenInput)
+int sst2 = f_slopeState(sma2, slopeLenInput)
+int sst3 = f_slopeState(sma3, slopeLenInput)
+int sst4 = f_slopeState(sma4, slopeLenInput)
+int sst5 = f_slopeState(sma5, slopeLenInput)
+bool slopeAllUp   = (not showSMA1 or sst1 >= 1) and (not showSMA2 or sst2 >= 1) and (not showSMA3 or sst3 >= 1) and (not showSMA4 or sst4 >= 1) and (not showSMA5 or sst5 >= 1)
+bool slopeAllDown = (not showSMA1 or sst1 <= -1) and (not showSMA2 or sst2 <= -1) and (not showSMA3 or sst3 <= -1) and (not showSMA4 or sst4 <= -1) and (not showSMA5 or sst5 <= -1)
+bool slopeAnyFlat = (showSMA1 and sst1 == 0) or (showSMA2 and sst2 == 0) or (showSMA3 and sst3 == 0) or (showSMA4 and sst4 == 0) or (showSMA5 and sst5 == 0)
+bgcolor(showSlopeBG and useSlopeColor and not slopeAnyFlat and slopeAllUp ? color.new(color.green, 93) : showSlopeBG and useSlopeColor and not slopeAnyFlat and slopeAllDown ? color.new(color.red, 93) : na)
+// ══════════════════════════════════════════════════════════════
+// 変数宣言
+// ══════════════════════════════════════════════════════════════
+// ── Swing1 ──
+var string pbState1 = "---"
+var bool   ssb_findingMin1 = true
+var bool   ssb_findingMax1 = false
+var float  ssb_minPrice1 = na
+var int    ssb_minIdx1   = na
+var float  ssb_maxPrice1 = na
+var int    ssb_maxIdx1   = na
+var array<float> peakPx1 = array.new<float>()
+var array<int>   peakIx1 = array.new<int>()
+var array<float> botPx1  = array.new<float>()
+var array<int>   botIx1  = array.new<int>()
+var string trend_status1_confirmed = "FLAT"
+var float  prevPeak1    = na
+var float  prevBot1     = na
+var float  prevPeak2nd1 = na
+var float  prevBot2nd1  = na
+// ── Swing2 ──
+var string pbState2 = "---"
+var bool   ssb_findingMin2 = true
+var bool   ssb_findingMax2 = false
+var float  ssb_minPrice2 = na
+var int    ssb_minIdx2   = na
+var float  ssb_maxPrice2 = na
+var int    ssb_maxIdx2   = na
+var array<float> peakPx2 = array.new<float>()
+var array<int>   peakIx2 = array.new<int>()
+var array<float> botPx2  = array.new<float>()
+var array<int>   botIx2  = array.new<int>()
+var string trend_status2_confirmed = "FLAT"
+var float  prevPeak2    = na
+var float  prevBot2     = na
+var float  prevPeak2nd2 = na
+var float  prevBot2nd2  = na
+// ── リアルタイムトレンド ──
+var string prev_trend_status1_rt = "FLAT"
+// ══════════════════════════════════════════════════════════════
+// Offset計算（ATRベース）
+// ══════════════════════════════════════════════════════════════
+atrValue      = ta.atr(atrPeriod)
+sigOffset1    = atrValue * signalOffset1Mult
+sigOffset2    = atrValue * signalOffset2Mult
+priceOffset   = atrValue * priceLabelOffsetMult
+noiseThreshold = atrValue * noiseFilterATR
+// ══════════════════════════════════════════════════════════════
+// ヘルパー関数
+// ══════════════════════════════════════════════════════════════
+f_formatPrice(float price) =>
+    str.tostring(price, format.mintick)
+
+f_calcTrendStatus(array<float> peaks, array<float> bots) =>
+    string result = "FLAT"
+    if array.size(peaks) >= 2 and array.size(bots) >= 2
+        float P0 = array.get(peaks, array.size(peaks) - 2)
+        float P1 = array.get(peaks, array.size(peaks) - 1)
+        float B0 = array.get(bots, array.size(bots) - 2)
+        float B1 = array.get(bots, array.size(bots) - 1)
+        if P1 > P0 and B1 > B0
+            result := "UP"
+        else if P1 < P0 and B1 < B0
+            result := "DOWN"
+    result
+
+f_calcRealtimeTrendStatus(array<float> peaks, array<float> bots, string confirmedStatus) =>
+    string result = confirmedStatus
+    if array.size(peaks) >= 2 and array.size(bots) >= 2
+        float P0 = array.get(peaks, array.size(peaks) - 2)
+        float P1 = array.get(peaks, array.size(peaks) - 1)
+        float B0 = array.get(bots, array.size(bots) - 2)
+        float B1 = array.get(bots, array.size(bots) - 1)
+        bool breakAbove = high > P1
+        bool breakBelow = low < B1
+        if confirmedStatus == "UP"
+            if breakBelow
+                result := "FLAT"
+        else if confirmedStatus == "DOWN"
+            if breakAbove
+                result := "FLAT"
+        else
+            if breakAbove and not breakBelow
+                result := "UP"
+            else if breakBelow and not breakAbove
+                result := "DOWN"
+    result
+
+f_trendToJapanese(string status) =>
+    switch status
+        "UP"   => "上昇"
+        "DOWN" => "下降"
+        =>        "レス"
+// ══════════════════════════════════════════════════════════════
+// P&B Signal ロジック
+// ══════════════════════════════════════════════════════════════
+var string lastPBSignal1 = na
+var string lastPBSignal2 = na
+peakCondition1   = low < ta.lowest(low, length1)[1] and lastPBSignal1 != "peak"
+bottomCondition1 = high > ta.highest(high, length1)[1] and lastPBSignal1 != "bottom"
+var float peakFlag1   = na
+var float bottomFlag1 = na
+if peakCondition1
+    peakFlag1     := 1
+    lastPBSignal1 := "peak"
+    pbState1      := "下落波動"
+else
+    peakFlag1 := na
+if bottomCondition1
+    bottomFlag1   := 1
+    lastPBSignal1 := "bottom"
+    pbState1      := "上昇波動"
+else
+    bottomFlag1 := na
+peakCondition2   = low < ta.lowest(low, length2)[1] and lastPBSignal2 != "peak"
+bottomCondition2 = high > ta.highest(high, length2)[1] and lastPBSignal2 != "bottom"
+var float peakFlag2   = na
+var float bottomFlag2 = na
+if peakCondition2
+    peakFlag2     := 1
+    lastPBSignal2 := "peak"
+    pbState2      := "下落波動"
+else
+    peakFlag2 := na
+if bottomCondition2
+    bottomFlag2   := 1
+    lastPBSignal2 := "bottom"
+    pbState2      := "上昇波動"
+else
+    bottomFlag2 := na
+// ══════════════════════════════════════════════════════════════
+// P&B Signal プロット
+// ══════════════════════════════════════════════════════════════
+plotshape(showPB1 and peakFlag1 ? high + sigOffset1 : na, "SW1 Peak", shape.triangledown, location.absolute, pbCol1Down, size=size.tiny)
+plotshape(showPB1 and bottomFlag1 ? low - sigOffset1 : na, "SW1 Bottom", shape.triangleup, location.absolute, pbCol1Up, size=size.tiny)
+plotshape(showPB2 and peakFlag2 ? high + sigOffset2 : na, "SW2 Peak", shape.diamond, location.absolute, pbCol2Down, size=size.tiny)
+plotshape(showPB2 and bottomFlag2 ? low - sigOffset2 : na, "SW2 Bottom", shape.diamond, location.absolute, pbCol2Up, size=size.tiny)
+// ══════════════════════════════════════════════════════════════
+// 転換価格計算
+// ══════════════════════════════════════════════════════════════
+float turnPrice1 = pbState1 == "上昇波動" ? ta.lowest(low, length1)[1] : ta.highest(high, length1)[1]
+float turnPrice2 = pbState2 == "上昇波動" ? ta.lowest(low, length2)[1] : ta.highest(high, length2)[1]
+string turnDir1  = pbState1 == "上昇波動" ? "↓" : "↑"
+string turnDir2  = pbState2 == "上昇波動" ? "↓" : "↑"
+// ══════════════════════════════════════════════════════════════
+// B1/P1 現在値トラッキング
+// ══════════════════════════════════════════════════════════════
+var float last_B1_1 = na
+var float last_P1_1 = na
+var int   last_B1_idx1 = na
+var int   last_P1_idx1 = na
+if array.size(botPx1) >= 1
+    last_B1_1    := array.get(botPx1, array.size(botPx1) - 1)
+    last_B1_idx1 := array.get(botIx1, array.size(botIx1) - 1)
+if array.size(peakPx1) >= 1
+    last_P1_1    := array.get(peakPx1, array.size(peakPx1) - 1)
+    last_P1_idx1 := array.get(peakIx1, array.size(peakIx1) - 1)
+var float last_B1_2 = na
+var float last_P1_2 = na
+var int   last_B1_idx2 = na
+var int   last_P1_idx2 = na
+if array.size(botPx2) >= 1
+    last_B1_2    := array.get(botPx2, array.size(botPx2) - 1)
+    last_B1_idx2 := array.get(botIx2, array.size(botIx2) - 1)
+if array.size(peakPx2) >= 1
+    last_P1_2    := array.get(peakPx2, array.size(peakPx2) - 1)
+    last_P1_idx2 := array.get(peakIx2, array.size(peakIx2) - 1)
+// ══════════════════════════════════════════════════════════════
+// スイング確定処理 - Swing 1
+// ══════════════════════════════════════════════════════════════
+if barstate.isconfirmed
+    if ssb_findingMin1 and (na(ssb_minPrice1) or low < ssb_minPrice1)
+        ssb_minPrice1 := low
+        ssb_minIdx1   := bar_index
+    if ssb_findingMax1 and (na(ssb_maxPrice1) or high > ssb_maxPrice1)
+        ssb_maxPrice1 := high
+        ssb_maxIdx1   := bar_index
+    peak_conf1   = ssb_findingMax1 and low < ta.lowest(low, length1)[1]
+    bottom_conf1 = ssb_findingMin1 and high > ta.highest(high, length1)[1]
+    if peak_conf1
+        array.push(peakPx1, ssb_maxPrice1)
+        array.push(peakIx1, ssb_maxIdx1)
+        if array.size(peakPx1) > 2
+            array.shift(peakPx1)
+            array.shift(peakIx1)
+        if showSwing1
+            line.new(ssb_minIdx1, ssb_minPrice1, ssb_maxIdx1, ssb_maxPrice1, color=lineColor1, width=lineWidth1)
+        if showSwing1 and showPriceLabel1
+            label.new(ssb_maxIdx1, ssb_maxPrice1 + priceOffset, str.tostring(ssb_maxPrice1, "#.##"),
+                 textcolor=lineColor1, style=label.style_none, size=size.normal)
+        trend_status1_confirmed := f_calcTrendStatus(peakPx1, botPx1)
+        // ノイズフィルタ: 有意な高値更新チェック（戻り高値クリア判定のみ保持）
+        if not na(prevPeak1) and ssb_maxPrice1 < prevPeak1
+            // 高値切り下げ記録は trend_status 計算のみに使用
+        prevPeak2nd1    := prevPeak1
+        prevPeak1       := ssb_maxPrice1
+        ssb_findingMax1 := false
+        ssb_findingMin1 := true
+        ssb_minPrice1   := low
+        ssb_minIdx1     := bar_index
+    if bottom_conf1
+        array.push(botPx1, ssb_minPrice1)
+        array.push(botIx1, ssb_minIdx1)
+        if array.size(botPx1) > 2
+            array.shift(botPx1)
+            array.shift(botIx1)
+        if showSwing1
+            line.new(ssb_maxIdx1, ssb_maxPrice1, ssb_minIdx1, ssb_minPrice1, color=lineColor1, width=lineWidth1)
+        if showSwing1 and showPriceLabel1
+            label.new(ssb_minIdx1, ssb_minPrice1 - priceOffset, str.tostring(ssb_minPrice1, "#.##"),
+                 textcolor=lineColor1, style=label.style_none, size=size.normal)
+        trend_status1_confirmed := f_calcTrendStatus(peakPx1, botPx1)
+        if not na(prevBot1) and ssb_minPrice1 > prevBot1
+            // 安値切り上げ記録は trend_status 計算のみに使用
+        prevBot2nd1     := prevBot1
+        prevBot1        := ssb_minPrice1
+        ssb_findingMin1 := false
+        ssb_findingMax1 := true
+        ssb_maxPrice1   := high
+        ssb_maxIdx1     := bar_index
+// ══════════════════════════════════════════════════════════════
+// スイング確定処理 - Swing 2
+// ══════════════════════════════════════════════════════════════
+if barstate.isconfirmed
+    if ssb_findingMin2 and (na(ssb_minPrice2) or low < ssb_minPrice2)
+        ssb_minPrice2 := low
+        ssb_minIdx2   := bar_index
+    if ssb_findingMax2 and (na(ssb_maxPrice2) or high > ssb_maxPrice2)
+        ssb_maxPrice2 := high
+        ssb_maxIdx2   := bar_index
+    peak_conf2   = ssb_findingMax2 and low < ta.lowest(low, length2)[1]
+    bottom_conf2 = ssb_findingMin2 and high > ta.highest(high, length2)[1]
+    if peak_conf2
+        array.push(peakPx2, ssb_maxPrice2)
+        array.push(peakIx2, ssb_maxIdx2)
+        if array.size(peakPx2) > 2
+            array.shift(peakPx2)
+            array.shift(peakIx2)
+        if showSwing2
+            line.new(ssb_minIdx2, ssb_minPrice2, ssb_maxIdx2, ssb_maxPrice2, color=lineColor2, width=lineWidth2)
+        trend_status2_confirmed := f_calcTrendStatus(peakPx2, botPx2)
+        prevPeak2nd2    := prevPeak2
+        prevPeak2       := ssb_maxPrice2
+        ssb_findingMax2 := false
+        ssb_findingMin2 := true
+        ssb_minPrice2   := low
+        ssb_minIdx2     := bar_index
+    if bottom_conf2
+        array.push(botPx2, ssb_minPrice2)
+        array.push(botIx2, ssb_minIdx2)
+        if array.size(botPx2) > 2
+            array.shift(botPx2)
+            array.shift(botIx2)
+        if showSwing2
+            line.new(ssb_maxIdx2, ssb_maxPrice2, ssb_minIdx2, ssb_minPrice2, color=lineColor2, width=lineWidth2)
+        trend_status2_confirmed := f_calcTrendStatus(peakPx2, botPx2)
+        prevBot2nd2     := prevBot2
+        prevBot2        := ssb_minPrice2
+        ssb_findingMin2 := false
+        ssb_findingMax2 := true
+        ssb_maxPrice2   := high
+        ssb_maxIdx2     := bar_index
+// ══════════════════════════════════════════════════════════════
+// リアルタイムトレンド判定
+// ══════════════════════════════════════════════════════════════
+string trend_status1 = f_calcRealtimeTrendStatus(peakPx1, botPx1, trend_status1_confirmed)
+string trend_status2 = f_calcRealtimeTrendStatus(peakPx2, botPx2, trend_status2_confirmed)
+prev_trend_status1_rt := trend_status1
+// ══════════════════════════════════════════════════════════════
+// 直近B1/P1ライン表示
+// ══════════════════════════════════════════════════════════════
+var line b1_line1 = na
+var line p1_line1 = na
+var line b1_line2 = na
+var line p1_line2 = na
+if not na(b1_line1)
+    line.delete(b1_line1)
+if not na(p1_line1)
+    line.delete(p1_line1)
+if not na(b1_line2)
+    line.delete(b1_line2)
+if not na(p1_line2)
+    line.delete(p1_line2)
+if showB1P1Lines1
+    if not na(last_B1_1)
+        int b1_idx = array.size(botIx1) >= 1 ? array.get(botIx1, array.size(botIx1) - 1) : bar_index
+        b1_line1 := line.new(b1_idx, last_B1_1, bar_index + 10, last_B1_1, color=color.green, width=2, style=line.style_solid)
+    if not na(last_P1_1)
+        int p1_idx = array.size(peakIx1) >= 1 ? array.get(peakIx1, array.size(peakIx1) - 1) : bar_index
+        p1_line1 := line.new(p1_idx, last_P1_1, bar_index + 10, last_P1_1, color=color.red, width=2, style=line.style_solid)
+if showB1P1Lines2
+    if not na(last_B1_2)
+        int b1_idx = array.size(botIx2) >= 1 ? array.get(botIx2, array.size(botIx2) - 1) : bar_index
+        b1_line2 := line.new(b1_idx, last_B1_2, bar_index + 10, last_B1_2, color=color.green, width=2, style=line.style_dashed)
+    if not na(last_P1_2)
+        int p1_idx = array.size(peakIx2) >= 1 ? array.get(peakIx2, array.size(peakIx2) - 1) : bar_index
+        p1_line2 := line.new(p1_idx, last_P1_2, bar_index + 10, last_P1_2, color=color.red, width=2, style=line.style_dashed)
+// ══════════════════════════════════════════════════════════════
+// トレンドテーブル表示（4列: name | トレンド | 波動 | 転換価格）
+// ══════════════════════════════════════════════════════════════
+var table trendTable = na
+if showTrendTable
+    tablePos = switch tablePosition
+        "top_left"      => position.top_left
+        "top_center"    => position.top_center
+        "top_right"     => position.top_right
+        "middle_left"   => position.middle_left
+        "middle_center" => position.middle_center
+        "middle_right"  => position.middle_right
+        "bottom_left"   => position.bottom_left
+        "bottom_center" => position.bottom_center
+        "bottom_right"  => position.bottom_right
+        => position.top_right
+    if na(trendTable)
+        trendTable := table.new(tablePos, 4, 3, border_width=1)
+    // ── row 0: ヘッダー ──
+    table.cell(trendTable, 0, 0, "", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 1, 0, "トレンド", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 2, 0, "波動", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 3, 0, "転換価格", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
+    // ── row 1: Swing1 ──
+    color pb1Color = pbState1 == "上昇波動" ? color.rgb(0, 150, 0) : pbState1 == "下落波動" ? color.rgb(200, 0, 0) : color.rgb(100, 100, 100)
+    table.cell(trendTable, 0, 1, "Swing1", bgcolor=color.rgb(30, 80, 180), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 1, 1, f_trendToJapanese(trend_status1), bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 2, 1, pbState1, bgcolor=pb1Color, text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 3, 1, str.tostring(turnPrice1, "#.##") + " " + turnDir1, bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+    // ── row 2: Swing2 ──
+    color pb2Color = pbState2 == "上昇波動" ? color.rgb(0, 150, 0) : pbState2 == "下落波動" ? color.rgb(200, 0, 0) : color.rgb(100, 100, 100)
+    table.cell(trendTable, 0, 2, "Swing2", bgcolor=color.rgb(130, 50, 180), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 1, 2, f_trendToJapanese(trend_status2), bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 2, 2, pbState2, bgcolor=pb2Color, text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 3, 2, str.tostring(turnPrice2, "#.##") + " " + turnDir2, bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+// ══════════════════════════════════════════════════════════════
+// アラート
+// ══════════════════════════════════════════════════════════════
+alertcondition(bottomCondition1, title="Swing1 P&B Long", message="Swing1 P&B Long Signal - {{ticker}} @ {{close}}")
+alertcondition(peakCondition1, title="Swing1 P&B Short", message="Swing1 P&B Short Signal - {{ticker}} @ {{close}}")
+alertcondition(bottomCondition2, title="Swing2 P&B Long", message="Swing2 P&B Long Signal - {{ticker}} @ {{close}}")
+alertcondition(peakCondition2, title="Swing2 P&B Short", message="Swing2 P&B Short Signal - {{ticker}} @ {{close}}")
