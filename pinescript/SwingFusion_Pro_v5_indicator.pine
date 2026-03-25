@@ -26,28 +26,16 @@ grpMA3       = "① SMA3"
 showSMA3     = input.bool(true, "表示", group=grpMA3)
 smaLength3   = input.int(200, "期間", minval=1, group=grpMA3)
 smaColor3    = input.color(color.red, "固定色", group=grpMA3)
-smaSlope3    = input.bool(true, "傾斜色ON", group=grpMA3)
-smaUp3       = input.color(color.lime,   "上昇色", group=grpMA3)
-smaDn3       = input.color(color.red,    "下降色", group=grpMA3)
-smaFl3       = input.color(color.purple, "フラット色", group=grpMA3)
 // ── SMA4 ──
 grpMA4       = "① SMA4"
 showSMA4     = input.bool(true, "表示", group=grpMA4)
 smaLength4   = input.int(480, "期間", minval=1, group=grpMA4)
 smaColor4    = input.color(color.green, "固定色", group=grpMA4)
-smaSlope4    = input.bool(true, "傾斜色ON", group=grpMA4)
-smaUp4       = input.color(color.lime,   "上昇色", group=grpMA4)
-smaDn4       = input.color(color.red,    "下降色", group=grpMA4)
-smaFl4       = input.color(color.gray,   "フラット色", group=grpMA4)
 // ── SMA5 ──
 grpMA5       = "① SMA5"
 showSMA5     = input.bool(true, "表示", group=grpMA5)
 smaLength5   = input.int(600, "期間", minval=1, group=grpMA5)
 smaColor5    = input.color(color.blue, "固定色", group=grpMA5)
-smaSlope5    = input.bool(true, "傾斜色ON", group=grpMA5)
-smaUp5       = input.color(color.lime,   "上昇色", group=grpMA5)
-smaDn5       = input.color(color.red,    "下降色", group=grpMA5)
-smaFl5       = input.color(color.gray,   "フラット色", group=grpMA5)
 // ── MA共通設定 ──
 grpMACommon   = "① MA共通"
 smaLineWidth  = input.int(2, "線の太さ", minval=1, maxval=4, group=grpMACommon)
@@ -100,6 +88,8 @@ labelOffset = input.float(0.1, "ラベルオフセット(%)", minval=0.1, maxval
 // ══════════════════════════════════════════════════════════════
 // ④ ブレイク転換設定
 // ══════════════════════════════════════════════════════════════
+nWaveTolerance      = input.float(10.0, "N字波動 許容幅(円)", minval=0, maxval=100, step=5, group="④ ブレイク転換設定",
+     tooltip="ボトム/ピークの切り上げ・切り下げ判定の許容幅。0=厳密、10=ほぼダブルボトムもN字とみなす")
 showBreakLabel1     = input.bool(true, "SW1 Breakラベル表示", group="④ ブレイク転換設定")
 oshiBreakColor      = input.color(color.red, "押し安値ブレイク色", group="④ ブレイク転換設定")
 modoriBreakColor    = input.color(color.blue, "戻り高値ブレイク色", group="④ ブレイク転換設定")
@@ -112,11 +102,13 @@ showBreakLevel      = input.bool(true, "過去ブレイクレベル横線表示"
 breakLevelBuyColor  = input.color(color.blue, "BUYブレイクレベル色", group="④ ブレイク転換設定")
 breakLevelSellColor = input.color(color.red, "SELLブレイクレベル色", group="④ ブレイク転換設定")
 breakZoneColor      = input.color(color.new(color.gray, 80), "ブレイク縦ゾーン色", group="④ ブレイク転換設定")
-showPostBreakN      = input.bool(true, "ブレイク後N字波動ラベル表示", group="④ ブレイク転換設定")
-postBreakNBuyColor  = input.color(color.teal, "ブレイク後N字 Buy色", group="④ ブレイク転換設定")
-postBreakNSellColor = input.color(color.orange, "ブレイク後N字 Sell色", group="④ ブレイク転換設定")
-postBreakNMaxBars   = input.int(100, "ブレイク後N字 有効バー数", minval=10, maxval=500, step=10, group="④ ブレイク転換設定",
-     tooltip="ブレイク後この本数以内にN字が完成しなければ追跡終了")
+showPBEntry          = input.bool(true, "ブレイク後PBエントリー表示", group="④ ブレイク転換設定")
+pbEntryBuyColor      = input.color(color.teal, "PBエントリー Buy色", group="④ ブレイク転換設定")
+pbEntrySellColor     = input.color(color.orange, "PBエントリー Sell色", group="④ ブレイク転換設定")
+pbEntryRatioThreshold = input.float(0.70, "高比率閾値", minval=0.3, maxval=1.0, step=0.05, group="④ ブレイク転換設定",
+     tooltip="リトレースメント比率がこの値以上の場合、PBエントリーではなく2つ前の高値/安値の完全突破を待つ")
+pbEntryMaxBars       = input.int(100, "PBエントリー有効バー数", minval=10, maxval=500, step=10, group="④ ブレイク転換設定",
+     tooltip="ブレイク後この本数以内にエントリー条件を満たさなければ追跡終了")
 useSignalTimeFilter = input.bool(false, "シグナル時間制限 ON/OFF", group="④ ブレイク転換設定")
 signalStartHour     = input.int(8, "シグナル開始（時）", minval=0, maxval=23, group="④ ブレイク転換設定")
 signalStartMin      = input.int(45, "シグナル開始（分）", minval=0, maxval=59, group="④ ブレイク転換設定")
@@ -128,7 +120,7 @@ signalEndMin        = input.int(15, "シグナル終了（分）", minval=0, max
 enableAlertOshiBreak1   = input.bool(true, "SW1 押し安値ブレイク アラート", group="⑤ アラート")
 enableAlertModoriBreak1 = input.bool(true, "SW1 戻り高値ブレイク アラート", group="⑤ アラート")
 enableAlertEntry        = input.bool(true, "転換シグナル アラート", group="⑤ アラート")
-enableAlertPostBreakN   = input.bool(true, "ブレイク後N字波動 アラート", group="⑤ アラート")
+enableAlertPBEntry      = input.bool(true, "ブレイク後PBエントリー アラート", group="⑤ アラート")
 // ══════════════════════════════════════════════════════════════
 // ⑥ テーブル・ゾーン表示
 // ══════════════════════════════════════════════════════════════
@@ -166,9 +158,9 @@ f_slopeColor(float ma, int n, color colUp, color colDown, color colFlat, color c
             slope >= 0 ? color.new(colUp, alpha) : color.new(colDown, alpha)
 color sc1 = f_slopeColor(sma1, slopeLenInput, smaUp1, smaDn1, smaFl1, smaColor1, useSlopeColor and smaSlope1)
 color sc2 = f_slopeColor(sma2, slopeLenInput, smaUp2, smaDn2, smaFl2, smaColor2, useSlopeColor and smaSlope2)
-color sc3 = f_slopeColor(sma3, slopeLenInput, smaUp3, smaDn3, smaFl3, smaColor3, useSlopeColor and smaSlope3)
-color sc4 = f_slopeColor(sma4, slopeLenInput, smaUp4, smaDn4, smaFl4, smaColor4, useSlopeColor and smaSlope4)
-color sc5 = f_slopeColor(sma5, slopeLenInput, smaUp5, smaDn5, smaFl5, smaColor5, useSlopeColor and smaSlope5)
+color sc3 = smaColor3
+color sc4 = smaColor4
+color sc5 = smaColor5
 plot(showSMA1 ? sma1 : na, "SMA1", sc1, smaLineWidth)
 plot(showSMA2 ? sma2 : na, "SMA2", sc2, smaLineWidth)
 plot(showSMA3 ? sma3 : na, "SMA3", sc3, smaLineWidth)
@@ -236,14 +228,14 @@ var float rt_modori_peakB_close1  = na
 var float rt_oshi_botB_close1     = na
 var float rt_ratio_modori1        = na
 var float rt_ratio_oshi1          = na
-// ── ブレイク後N字波動追跡用 ──
-var int   postN_stateBull  = 0       // 0=非追跡, 1=ピーク待ち, 2=ボトム待ち(切り上げ確認), 3=ピーク上抜け待ち
-var int   postN_stateBear  = 0       // 0=非追跡, 1=ボトム待ち, 2=ピーク待ち(切り下げ確認), 3=ボトム下抜け待ち
-var float postN_bullPeak   = na      // Bull: ブレイク後の最初のSW1ピーク価格
-var float postN_bullBot    = na      // Bull: 切り上げ確認済みのボトム価格
-var float postN_bearBot    = na      // Bear: ブレイク後の最初のSW1ボトム価格
-var float postN_bearPeak   = na      // Bear: 切り下げ確認済みのピーク価格
-var int   postN_startBar   = 0       // 追跡開始バー
+// ── ブレイク後PBエントリー追跡用 ──
+var int   pbEntry_stateBull    = 0    // 0=非追跡, 1=ピーク待ち, 2=切上げボトム待ち, 3=完全突破待ち(高比率)
+var int   pbEntry_stateBear    = 0    // 0=非追跡, 1=ボトム待ち, 2=切下げピーク待ち, 3=完全突破待ち(高比率)
+var float pbEntry_bullRatio    = na   // ブレイク時のリトレースメント比率
+var float pbEntry_bearRatio    = na
+var float pbEntry_bullPrevPeak = na   // 2つ前の高値（完全突破レベル）
+var float pbEntry_bearPrevBot  = na   // 2つ前の安値（完全突破レベル）
+var int   pbEntry_startBar     = 0
 // ── Swing1 ピーク/ボトム確定時のclose記録用 ──
 var float prevPeakClose1    = na
 var float prevBotClose1     = na
@@ -576,19 +568,26 @@ if barstate.isconfirmed
                     rt_ratio_modori1       := na
             else if ssb_maxPrice1 < prevPeak1
                 peakFalling1 := true
-        // ── ブレイク後N字追跡: Bull ピーク確定処理 ──
-        if postN_stateBull == 1
-            // State1: 最初のピーク確定 → 記録してボトム待ちへ
-            postN_bullPeak  := ssb_maxPrice1
-            postN_stateBull := 2
-        // ── ブレイク後N字追跡: Bear ピーク確定処理 ──
-        if postN_stateBear == 2 and not na(postN_bearBot)
-            // State2: ピーク確定 → 切り下げ確認
-            if ssb_maxPrice1 < prevPeak1
-                postN_bearPeak  := ssb_maxPrice1
-                postN_stateBear := 3   // ボトム下抜け待ちへ
+        // ── ブレイク後PBエントリー: Bull ピーク確定 → 切上げボトム待ちへ ──
+        if pbEntry_stateBull == 1
+            pbEntry_stateBull := 2
+        // ── ブレイク後PBエントリー: Bear ピーク確定 → 切り下げ判定 ──
+        if pbEntry_stateBear == 2
+            if ssb_maxPrice1 < prevPeak1  // 高値切り下げ確認
+                if not na(pbEntry_bearRatio) and pbEntry_bearRatio < pbEntryRatioThreshold
+                    // 低比率 → PBエントリー
+                    if showPBEntry
+                        label.new(bar_index, high + sigOffset1 + breakLabelOffset,
+                             "PB Sell",
+                             style=label.style_none, textcolor=pbEntrySellColor, size=size.normal)
+                    if enableAlertPBEntry
+                        alert("PBエントリー Sell @ " + str.tostring(close, "#.##") + " - " + syminfo.ticker, alert.freq_once_per_bar_close)
+                    pbEntry_stateBear := 0
+                else
+                    // 高比率 → 完全突破待ちへ
+                    pbEntry_stateBear := 3
             else
-                postN_stateBear := 0   // 高値切り下げ失敗 → 追跡終了
+                pbEntry_stateBear := 0  // 切り下げ失敗 → 追跡終了
         prevPeak2ndClose1 := prevPeakClose1
         prevPeak2ndIdx1   := prevPeakIdx1
         prevPeak2nd1      := prevPeak1
@@ -640,19 +639,26 @@ if barstate.isconfirmed
                     rt_ratio_oshi1         := na
             else if ssb_minPrice1 > prevBot1
                 botRising1 := true
-        // ── ブレイク後N字追跡: Bear ボトム確定処理 ──
-        if postN_stateBear == 1
-            // State1: 最初のボトム確定 → 記録してピーク待ちへ
-            postN_bearBot   := ssb_minPrice1
-            postN_stateBear := 2
-        // ── ブレイク後N字追跡: Bull ボトム確定処理 ──
-        if postN_stateBull == 2 and not na(postN_bullPeak)
-            // State2: ボトム確定 → 切り上げ確認
-            if ssb_minPrice1 > prevBot1
-                postN_bullBot   := ssb_minPrice1
-                postN_stateBull := 3   // ピーク上抜け待ちへ
+        // ── ブレイク後PBエントリー: Bear ボトム確定 → 切下げピーク待ちへ ──
+        if pbEntry_stateBear == 1
+            pbEntry_stateBear := 2
+        // ── ブレイク後PBエントリー: Bull ボトム確定 → 切り上げ判定 ──
+        if pbEntry_stateBull == 2
+            if ssb_minPrice1 > prevBot1  // 安値切り上げ確認
+                if not na(pbEntry_bullRatio) and pbEntry_bullRatio < pbEntryRatioThreshold
+                    // 低比率 → PBエントリー
+                    if showPBEntry
+                        label.new(bar_index, low - sigOffset1 - breakLabelOffset,
+                             "PB Buy",
+                             style=label.style_none, textcolor=pbEntryBuyColor, size=size.normal)
+                    if enableAlertPBEntry
+                        alert("PBエントリー Buy @ " + str.tostring(close, "#.##") + " - " + syminfo.ticker, alert.freq_once_per_bar_close)
+                    pbEntry_stateBull := 0
+                else
+                    // 高比率 → 完全突破待ちへ
+                    pbEntry_stateBull := 3
             else
-                postN_stateBull := 0   // 安値切り上げ失敗 → 追跡終了
+                pbEntry_stateBull := 0  // 切り上げ失敗 → 追跡終了
         prevBot2ndClose1 := prevBotClose1
         prevBot2ndIdx1   := prevBotIdx1
         prevBot2nd1      := prevBot1
@@ -899,8 +905,8 @@ if barstate.isconfirmed and signalTimeOK
             botRising1       := false
             oshiBreakSignal1 := true
             // N字波動判定（Bear）: 高値切り下げ（安値切り下げはブレイク自体が証明）
-            bool isNWaveBear = not na(prevPeak1) and not na(prevPeak2nd1) and prevPeak1 < prevPeak2nd1
-            string bearLabel = isNWaveBear ? "N Break\nSW1押安\n" + str.tostring(oshiYasune1, "#.##") : "Break\nSW1押安\n" + str.tostring(oshiYasune1, "#.##")
+            bool isNWaveBear = not na(prevPeak1) and not na(prevPeak2nd1) and prevPeak1 < prevPeak2nd1 + nWaveTolerance
+            string bearLabel = isNWaveBear ? "N Break Sell\nSW1押安\n" + str.tostring(oshiYasune1, "#.##") : "Break\nSW1押安\n" + str.tostring(oshiYasune1, "#.##")
             if showBreakLabel1
                 label.new(bar_index, low - sigOffset1 - breakLabelOffset,
                      bearLabel,
@@ -927,15 +933,12 @@ if barstate.isconfirmed and signalTimeOK
                 if enableAlertEntry
                     string aPfx = isNWaveBear ? "【N字】" : ""
                     alert(aPfx + "Bear Turn @ " + str.tostring(close, "#.##") + " - " + syminfo.ticker, alert.freq_once_per_bar_close)
-            // ── ブレイク後N字追跡（通常ブレイクのみ） ──
-            if not isNWaveBear
-                postN_stateBear := 1
-                postN_bearBot   := na
-                postN_bearPeak  := na
-                postN_startBar  := bar_index
-            else
-                postN_stateBear := 0
-            postN_stateBull := 0  // 逆方向追跡はリセット
+            // ── ブレイク後PBエントリー追跡開始 ──
+            pbEntry_stateBear    := 1
+            pbEntry_bearRatio    := rt_ratio_oshi1
+            pbEntry_bearPrevBot  := oshiPrevBot1
+            pbEntry_startBar     := bar_index
+            pbEntry_stateBull    := 0  // 逆方向追跡はリセット
     // ── SW1 戻り高値ブレイク（BUY Break） ──
     if not na(modoriTakane1) and not modoriBroken1
         if close > modoriTakane1
@@ -943,8 +946,8 @@ if barstate.isconfirmed and signalTimeOK
             peakFalling1       := false
             modoriBreakSignal1 := true
             // N字波動判定（Bull）: 安値切り上げ（高値切り上げはブレイク自体が証明）
-            bool isNWaveBull = not na(prevBot1) and not na(prevBot2nd1) and prevBot1 > prevBot2nd1
-            string bullLabel = isNWaveBull ? "N Break\nSW1戻高\n" + str.tostring(modoriTakane1, "#.##") : "Break\nSW1戻高\n" + str.tostring(modoriTakane1, "#.##")
+            bool isNWaveBull = not na(prevBot1) and not na(prevBot2nd1) and prevBot1 > prevBot2nd1 - nWaveTolerance
+            string bullLabel = isNWaveBull ? "N Break Buy\nSW1戻高\n" + str.tostring(modoriTakane1, "#.##") : "Break\nSW1戻高\n" + str.tostring(modoriTakane1, "#.##")
             if showBreakLabel1
                 label.new(bar_index, high + sigOffset1 + breakLabelOffset,
                      bullLabel,
@@ -971,15 +974,12 @@ if barstate.isconfirmed and signalTimeOK
                 if enableAlertEntry
                     string aPfx = isNWaveBull ? "【N字】" : ""
                     alert(aPfx + "Bull Turn @ " + str.tostring(close, "#.##") + " - " + syminfo.ticker, alert.freq_once_per_bar_close)
-            // ── ブレイク後N字追跡（通常ブレイクのみ） ──
-            if not isNWaveBull
-                postN_stateBull := 1
-                postN_bullPeak  := na
-                postN_bullBot   := na
-                postN_startBar  := bar_index
-            else
-                postN_stateBull := 0
-            postN_stateBear := 0  // 逆方向追跡はリセット
+            // ── ブレイク後PBエントリー追跡開始 ──
+            pbEntry_stateBull    := 1
+            pbEntry_bullRatio    := rt_ratio_modori1
+            pbEntry_bullPrevPeak := modoriPrevPeak1
+            pbEntry_startBar     := bar_index
+            pbEntry_stateBear    := 0  // 逆方向追跡はリセット
     // ── SW2 押し安値ブレイク（ゾーンのみ） ──
     if not na(oshiYasune2) and not oshiBroken2
         if close < oshiYasune2
@@ -995,34 +995,34 @@ if barstate.isconfirmed and signalTimeOK
             modoriBreakSignal2 := true
             f_addDowZone2(bar_index, modoriTakane2, math.max(close, open), "buy")
 // ══════════════════════════════════════════════════════════════
-// ブレイク後N字波動 価格ブレイク判定（State3: 確定終値で上抜け/下抜け）
+// ブレイク後PBエントリー: 高比率 完全突破判定 + タイムアウト
 // ══════════════════════════════════════════════════════════════
 if barstate.isconfirmed
     // タイムアウト判定
-    if postN_stateBull > 0 and bar_index - postN_startBar > postBreakNMaxBars
-        postN_stateBull := 0
-    if postN_stateBear > 0 and bar_index - postN_startBar > postBreakNMaxBars
-        postN_stateBear := 0
-    // Bull: State3 → 確定終値がブレイク後ピークを上抜け → N字完成
-    if postN_stateBull == 3 and not na(postN_bullPeak)
-        if close > postN_bullPeak
-            if showPostBreakN
-                label.new(bar_index, high + sigOffset1 + breakLabelOffset,
-                     "N波動\n" + str.tostring(close, "#.##"),
-                     style=label.style_none, textcolor=postBreakNBuyColor, size=size.normal)
-            if enableAlertPostBreakN
-                alert("ブレイク後N字波動（Buy） " + str.tostring(close, "#.##") + " - " + syminfo.ticker, alert.freq_once_per_bar_close)
-            postN_stateBull := 0
-    // Bear: State3 → 確定終値がブレイク後ボトムを下抜け → N字完成
-    if postN_stateBear == 3 and not na(postN_bearBot)
-        if close < postN_bearBot
-            if showPostBreakN
+    if pbEntry_stateBull > 0 and bar_index - pbEntry_startBar > pbEntryMaxBars
+        pbEntry_stateBull := 0
+    if pbEntry_stateBear > 0 and bar_index - pbEntry_startBar > pbEntryMaxBars
+        pbEntry_stateBear := 0
+    // Bull 高比率: State3 → 2つ前の高値を確定終値で完全突破
+    if pbEntry_stateBull == 3 and not na(pbEntry_bullPrevPeak)
+        if close > pbEntry_bullPrevPeak
+            if showPBEntry
                 label.new(bar_index, low - sigOffset1 - breakLabelOffset,
-                     "N波動\n" + str.tostring(close, "#.##"),
-                     style=label.style_none, textcolor=postBreakNSellColor, size=size.normal)
-            if enableAlertPostBreakN
-                alert("ブレイク後N字波動（Sell） " + str.tostring(close, "#.##") + " - " + syminfo.ticker, alert.freq_once_per_bar_close)
-            postN_stateBear := 0
+                     "Full Break\n" + str.tostring(pbEntry_bullPrevPeak, "#.##"),
+                     style=label.style_none, textcolor=pbEntryBuyColor, size=size.normal)
+            if enableAlertPBEntry
+                alert("完全突破 Buy @ " + str.tostring(close, "#.##") + " (2つ前高値: " + str.tostring(pbEntry_bullPrevPeak, "#.##") + ") - " + syminfo.ticker, alert.freq_once_per_bar_close)
+            pbEntry_stateBull := 0
+    // Bear 高比率: State3 → 2つ前の安値を確定終値で完全突破
+    if pbEntry_stateBear == 3 and not na(pbEntry_bearPrevBot)
+        if close < pbEntry_bearPrevBot
+            if showPBEntry
+                label.new(bar_index, high + sigOffset1 + breakLabelOffset,
+                     "Full Break\n" + str.tostring(pbEntry_bearPrevBot, "#.##"),
+                     style=label.style_none, textcolor=pbEntrySellColor, size=size.normal)
+            if enableAlertPBEntry
+                alert("完全突破 Sell @ " + str.tostring(close, "#.##") + " (2つ前安値: " + str.tostring(pbEntry_bearPrevBot, "#.##") + ") - " + syminfo.ticker, alert.freq_once_per_bar_close)
+            pbEntry_stateBear := 0
 // ══════════════════════════════════════════════════════════════
 // リアルタイムトレンド判定
 // ══════════════════════════════════════════════════════════════
