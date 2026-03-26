@@ -88,11 +88,31 @@ showPullback    = input.bool(true, "Pullbackシグナル表示", group="③ 表�
 pullbackBuyCol  = input.color(color.teal, "Pullback Buy色", group="③ 表示設定")
 pullbackSellCol = input.color(color.orange, "Pullback Sell色", group="③ 表示設定")
 labelOffset = input.float(0.1, "ラベルオフセット(%)", minval=0.1, maxval=2.0, step=0.1, group="③ 表示設定")
+useWaveFilter       = input.bool(true, "波動フィルタ ON/OFF", group="③ 表示設定",
+     tooltip="SW2シグナル時のSW1波動幅が閾値を超える場合、Pullbackをスキップ")
+waveFilterMode      = input.string("ATR倍率", "波動フィルタ方式", options=["ATR倍率", "％"], group="③ 表示設定")
+waveFilterATR       = input.float(5.0, "波動フィルタ閾値(ATR倍率)", minval=1.0, maxval=15.0, step=0.5, group="③ 表示設定",
+     tooltip="SW1波動幅 / ATR がこの値以上なら伸びすぎと判断しPullbackスキップ")
+waveFilterPct       = input.float(3.0, "波動フィルタ閾値(％)", minval=0.5, maxval=15.0, step=0.5, group="③ 表示設定",
+     tooltip="SW1波動率がこの値以上なら伸びすぎと判断しPullbackスキップ")
+// ══════════════════════════════════════════════════════════════
+// ⑤ ATR Bands
+// ══════════════════════════════════════════════════════════════
+atrBandPeriod      = input.int(3, "ATR期間", minval=1, maxval=50, group="⑤ ATR Stop/TP",
+     tooltip="ATR Stop/TP用のATR期間。既存のATR期間(③)とは独立。デフォルト: 3")
+atrBandMultiplier  = input.float(2.5, "ATR倍率（ストップ幅）", minval=0.1, maxval=10.0, step=0.1, group="⑤ ATR Stop/TP",
+     tooltip="ATR × この倍率でストップ幅を決定。デフォルト: 2.5")
+showTPinTable      = input.bool(true, "利確（TP）を表示", group="⑤ ATR Stop/TP",
+     tooltip="テーブルに利確価格・距離を追加表示")
+tpScaleFactor      = input.float(1.5, "TP倍率（R:R比）", minval=1.0, maxval=5.0, step=0.1, group="⑤ ATR Stop/TP",
+     tooltip="利確 = ストップ距離 × この倍率。R:R比率として機能。デフォルト: 1.5")
+showATRTable       = input.bool(true, "テーブル表示", group="⑤ ATR Stop/TP")
+atrTablePosition   = input.string("bottom_right", "テーブル位置", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group="⑤ ATR Stop/TP")
 // ══════════════════════════════════════════════════════════════
 // ⑥ テーブル・ゾーン表示
 // ══════════════════════════════════════════════════════════════
 showTrendTable = input.bool(true, "トレンドテーブル表示", group="⑥ テーブル・ゾーン表示")
-tablePosition  = input.string("bottom_right", "トレンドテーブル位置", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group="⑥ テーブル・ゾーン表示")
+tablePosition  = input.string("bottom_left", "トレンドテーブル位置", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group="⑥ テーブル・ゾーン表示")
 // ══════════════════════════════════════════════════════════════
 // SMA計算・プロット（傾斜色対応）
 // ══════════════════════════════════════════════════════════════
@@ -140,6 +160,15 @@ bool slopeAnyFlat = (slopeBG_MA1 and sst1 == 0) or (slopeBG_MA2 and sst2 == 0) o
 bool slopeAnySelected = slopeBG_MA1 or slopeBG_MA2 or slopeBG_MA3 or slopeBG_MA4 or slopeBG_MA5
 bgcolor(showSlopeBG and useSlopeColor and slopeAnySelected and not slopeAnyFlat and slopeAllUp ? color.new(color.green, 93) : showSlopeBG and useSlopeColor and slopeAnySelected and not slopeAnyFlat and slopeAllDown ? color.new(color.red, 93) : na)
 // ══════════════════════════════════════════════════════════════
+// ATR Bands 計算（テーブル用、バンド描画なし）
+// ══════════════════════════════════════════════════════════════
+atrBandValue     = ta.atr(atrBandPeriod)
+scaledATRBand    = atrBandValue * atrBandMultiplier
+upperATRBand     = close + scaledATRBand
+lowerATRBand     = close - scaledATRBand
+scaledTPLong     = close + ((close - lowerATRBand) * tpScaleFactor)
+scaledTPShort    = close - ((upperATRBand - close) * tpScaleFactor)
+// ══════════════════════════════════════════════════════════════
 // 変数宣言
 // ══════════════════════════════════════════════════════════════
 // ── Swing1 ──
@@ -182,6 +211,7 @@ var string prev_trend_status1_rt = "FLAT"
 var string sw2Dir        = na      // "Buy" or "Sell"
 var int    pullbackState = 0       // 0=逆PB1待ち, 1=順PB1待ち
 var bool   pullbackDone  = false   // true=Pullback発動済み（1回限り）
+var bool   waveFiltered  = false   // true=波動フィルタでPullbackスキップ
 // ══════════════════════════════════════════════════════════════
 // Offset計算（ATRベース）
 // ══════════════════════════════════════════════════════════════
@@ -284,17 +314,29 @@ plotshape(showPB2 and bottomFlag2 ? low - sigOffset2 : na, "SW2 Bottom", shape.d
 if showPB2 and peakCondition2
     label.new(bar_index, high + sigOffset2 * 1.5, "Sell", style=label.style_none, textcolor=pbCol2Down, size=size.normal)
     line.new(bar_index, high + sigOffset2 * 1.5, bar_index, high, color=pbCol2Down, width=1, style=line.style_dashed)
+    // 波動フィルタ計算
+    float _waveWidth = not na(prevPeak1) and not na(prevBot1) ? prevPeak1 - prevBot1 : 0
+    float _waveATR   = atrValue > 0 ? _waveWidth / atrValue : 0
+    float _waveRate  = not na(prevPeak1) and prevPeak1 > 0 ? _waveWidth / prevPeak1 * 100 : 0
+    bool  _filtered  = useWaveFilter and (waveFilterMode == "ATR倍率" ? _waveATR >= waveFilterATR : _waveRate >= waveFilterPct)
     sw2Dir        := "Sell"
     pullbackState := 0
     pullbackDone  := false
+    waveFiltered  := _filtered
 if showPB2 and bottomCondition2
     label.new(bar_index, low - sigOffset2 * 1.5, "Buy", style=label.style_none, textcolor=pbCol2Up, size=size.normal)
     line.new(bar_index, low - sigOffset2 * 1.5, bar_index, low, color=pbCol2Up, width=1, style=line.style_dashed)
+    // 波動フィルタ計算
+    float _waveWidth = not na(prevPeak1) and not na(prevBot1) ? prevPeak1 - prevBot1 : 0
+    float _waveATR   = atrValue > 0 ? _waveWidth / atrValue : 0
+    float _waveRate  = not na(prevBot1) and prevBot1 > 0 ? _waveWidth / prevBot1 * 100 : 0
+    bool  _filtered  = useWaveFilter and (waveFilterMode == "ATR倍率" ? _waveATR >= waveFilterATR : _waveRate >= waveFilterPct)
     sw2Dir        := "Buy"
     pullbackState := 0
     pullbackDone  := false
+    waveFiltered  := _filtered
 // ── Pullbackシグナル判定 ──
-if not pullbackDone and not na(sw2Dir)
+if not pullbackDone and not waveFiltered and not na(sw2Dir)
     if sw2Dir == "Buy"
         if peakCondition1 and pullbackState == 0
             pullbackState := 1   // PB1 Short確認（プルバック）
@@ -501,6 +543,57 @@ if showTrendTable
     table.cell(trendTable, 1, 2, f_trendToJapanese(trend_status2), bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 2, 2, pbState2, bgcolor=pb2Color, text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 3, 2, str.tostring(turnPrice2, "#.##") + " " + turnDir2, bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+// ══════════════════════════════════════════════════════════════
+// ATR Stop/TP テーブル
+// ══════════════════════════════════════════════════════════════
+var table atrTable = na
+if showATRTable
+    atrTablePos = switch atrTablePosition
+        "top_left"      => position.top_left
+        "top_center"    => position.top_center
+        "top_right"     => position.top_right
+        "middle_left"   => position.middle_left
+        "middle_center" => position.middle_center
+        "middle_right"  => position.middle_right
+        "bottom_left"   => position.bottom_left
+        "bottom_center" => position.bottom_center
+        "bottom_right"  => position.bottom_right
+        => position.bottom_right
+    int atrTableRows = showTPinTable ? 8 : 4
+    if na(atrTable)
+        atrTable := table.new(atrTablePos, 2, atrTableRows, border_width=1)
+        table.set_border_color(atrTable, color.rgb(0, 175, 200, 20))
+        table.set_frame_color(atrTable, color.rgb(0, 175, 200, 20))
+        table.set_frame_width(atrTable, 1)
+    // ── 現在バーの終値ベースで計算 ──
+    float tblUpper     = upperATRBand
+    float tblLower     = lowerATRBand
+    float tblScaledATR = scaledATRBand
+    color longBG      = color.rgb(0, 100, 0, 30)
+    color shortBG     = color.rgb(139, 0, 0, 30)
+    color headerColor = color.rgb(255, 255, 255)
+    color valColor    = color.rgb(255, 255, 0)
+    // ── ロング SL → TP ──
+    table.cell(atrTable, 0, 0, "ロング SL", text_color=headerColor, bgcolor=longBG, text_size=size.normal)
+    table.cell(atrTable, 1, 0, str.tostring(tblLower, format.mintick), text_color=valColor, bgcolor=longBG, text_size=size.normal)
+    table.cell(atrTable, 0, 1, "ロング SL幅", text_color=headerColor, bgcolor=longBG, text_size=size.normal)
+    table.cell(atrTable, 1, 1, str.tostring(math.round_to_mintick(close - tblLower)), text_color=valColor, bgcolor=longBG, text_size=size.normal)
+    if showTPinTable
+        table.cell(atrTable, 0, 2, "ロング TP", text_color=headerColor, bgcolor=longBG, text_size=size.normal)
+        table.cell(atrTable, 1, 2, str.tostring(scaledTPLong, format.mintick), text_color=valColor, bgcolor=longBG, text_size=size.normal)
+        table.cell(atrTable, 0, 3, "ロング TP幅", text_color=headerColor, bgcolor=longBG, text_size=size.normal)
+        table.cell(atrTable, 1, 3, str.tostring(math.round_to_mintick(tblScaledATR * tpScaleFactor)), text_color=valColor, bgcolor=longBG, text_size=size.normal)
+    // ── ショート SL → TP ──
+    int shortRow = showTPinTable ? 4 : 2
+    table.cell(atrTable, 0, shortRow, "ショート SL", text_color=headerColor, bgcolor=shortBG, text_size=size.normal)
+    table.cell(atrTable, 1, shortRow, str.tostring(tblUpper, format.mintick), text_color=valColor, bgcolor=shortBG, text_size=size.normal)
+    table.cell(atrTable, 0, shortRow + 1, "ショート SL幅", text_color=headerColor, bgcolor=shortBG, text_size=size.normal)
+    table.cell(atrTable, 1, shortRow + 1, str.tostring(math.round_to_mintick(tblUpper - close)), text_color=valColor, bgcolor=shortBG, text_size=size.normal)
+    if showTPinTable
+        table.cell(atrTable, 0, shortRow + 2, "ショート TP", text_color=headerColor, bgcolor=shortBG, text_size=size.normal)
+        table.cell(atrTable, 1, shortRow + 2, str.tostring(scaledTPShort, format.mintick), text_color=valColor, bgcolor=shortBG, text_size=size.normal)
+        table.cell(atrTable, 0, shortRow + 3, "ショート TP幅", text_color=headerColor, bgcolor=shortBG, text_size=size.normal)
+        table.cell(atrTable, 1, shortRow + 3, str.tostring(math.round_to_mintick(tblScaledATR * tpScaleFactor)), text_color=valColor, bgcolor=shortBG, text_size=size.normal)
 // ══════════════════════════════════════════════════════════════
 // アラート
 // ══════════════════════════════════════════════════════════════
