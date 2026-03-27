@@ -1,5 +1,5 @@
 //@version=5
-indicator("SwingFusion Pro Base Indicator", overlay=true, max_labels_count=500, max_lines_count=500)
+indicator("SwingFusion Pro Base Indicator", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
 // ══════════════════════════════════════════════════════════════
 // ① 移動平均線 (SMA) + 傾斜色（MA個別設定）
 // ══════════════════════════════════════════════════════════════
@@ -113,6 +113,14 @@ atrTablePosition   = input.string("bottom_right", "テーブル位置", options=
 // ══════════════════════════════════════════════════════════════
 showTrendTable = input.bool(true, "トレンドテーブル表示", group="⑥ テーブル・ゾーン表示")
 tablePosition  = input.string("bottom_left", "トレンドテーブル位置", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group="⑥ テーブル・ゾーン表示")
+showDowZone1       = input.bool(false, "Swing1 ゾーン表示", group="⑥ テーブル・ゾーン表示")
+dowZoneMaxCount1   = input.int(5, "Swing1 ゾーン最大表示数", minval=1, maxval=20, group="⑥ テーブル・ゾーン表示")
+dowZoneExtendBars1 = input.int(100, "Swing1 ゾーン延長バー数", minval=10, maxval=500, group="⑥ テーブル・ゾーン表示")
+dowZone1Color      = input.color(color.new(color.gray, 80), "Swing1 ゾーン色", group="⑥ テーブル・ゾーン表示")
+showDowZone2       = input.bool(true, "Swing2 ゾーン表示", group="⑥ テーブル・ゾーン表示")
+dowZoneMaxCount2   = input.int(10, "Swing2 ゾーン最大表示数", minval=1, maxval=20, group="⑥ テーブル・ゾーン表示")
+dowZoneExtendBars2 = input.int(100, "Swing2 ゾーン延長バー数", minval=10, maxval=500, group="⑥ テーブル・ゾーン表示")
+dowZone2Color      = input.color(color.new(color.purple, 85), "Swing2 ゾーン色", group="⑥ テーブル・ゾーン表示")
 // ══════════════════════════════════════════════════════════════
 // SMA計算・プロット（傾斜色対応）
 // ══════════════════════════════════════════════════════════════
@@ -207,6 +215,31 @@ var float  prevPeak2nd2 = na
 var float  prevBot2nd2  = na
 // ── リアルタイムトレンド ──
 var string prev_trend_status1_rt = "FLAT"
+// ── P&B追跡（ゾーン用） ──
+var bool   peakFalling1       = false
+var bool   botRising1         = false
+var float  oshiYasune1        = na
+var bool   oshiBroken1        = false
+var float  modoriTakane1      = na
+var bool   modoriBroken1      = false
+var bool   peakFalling2       = false
+var bool   botRising2         = false
+var float  oshiYasune2        = na
+var bool   oshiBroken2        = false
+var float  modoriTakane2      = na
+var bool   modoriBroken2      = false
+// ── ゾーン配列（Swing1） ──
+var array<box>    dowZoneBoxes1     = array.new<box>()
+var array<string> dowZoneTypes1     = array.new<string>()
+var array<float>  dowZoneTops1      = array.new<float>()
+var array<float>  dowZoneBottoms1   = array.new<float>()
+var array<int>    dowZoneStartBars1 = array.new<int>()
+// ── ゾーン配列（Swing2） ──
+var array<box>    dowZoneBoxes2     = array.new<box>()
+var array<string> dowZoneTypes2     = array.new<string>()
+var array<float>  dowZoneTops2      = array.new<float>()
+var array<float>  dowZoneBottoms2   = array.new<float>()
+var array<int>    dowZoneStartBars2 = array.new<int>()
 // ── Pullbackシグナル追跡用 ──
 var string sw2Dir        = na      // "Buy" or "Sell"
 var int    pullbackState = 0       // 0=逆PB1待ち, 1=順PB1待ち
@@ -266,6 +299,50 @@ f_trendToJapanese(string status) =>
         "UP"   => "上昇"
         "DOWN" => "下降"
         =>        "レス"
+
+f_addDowZone1(int startBar, float top, float bottom, string zoneType) =>
+    if showDowZone1
+        if array.size(dowZoneBoxes1) >= dowZoneMaxCount1
+            box oldBox = array.shift(dowZoneBoxes1)
+            array.shift(dowZoneTypes1)
+            array.shift(dowZoneTops1)
+            array.shift(dowZoneBottoms1)
+            array.shift(dowZoneStartBars1)
+            box.delete(oldBox)
+        box newBox = box.new(startBar, top, startBar + dowZoneExtendBars1, bottom,
+             border_color=color.new(dowZone1Color, 50), bgcolor=dowZone1Color, border_width=1)
+        array.push(dowZoneBoxes1, newBox)
+        array.push(dowZoneTypes1, zoneType)
+        array.push(dowZoneTops1, top)
+        array.push(dowZoneBottoms1, bottom)
+        array.push(dowZoneStartBars1, startBar)
+
+f_addDowZone2(int startBar, float top, float bottom, string zoneType) =>
+    if showDowZone2
+        if array.size(dowZoneBoxes2) >= dowZoneMaxCount2
+            box oldBox = array.shift(dowZoneBoxes2)
+            array.shift(dowZoneTypes2)
+            array.shift(dowZoneTops2)
+            array.shift(dowZoneBottoms2)
+            array.shift(dowZoneStartBars2)
+            box.delete(oldBox)
+        box newBox = box.new(startBar, top, startBar + dowZoneExtendBars2, bottom,
+             border_color=color.new(dowZone2Color, 50), bgcolor=dowZone2Color, border_width=1)
+        array.push(dowZoneBoxes2, newBox)
+        array.push(dowZoneTypes2, zoneType)
+        array.push(dowZoneTops2, top)
+        array.push(dowZoneBottoms2, bottom)
+        array.push(dowZoneStartBars2, startBar)
+
+f_updateDowZones() =>
+    if showDowZone1 and array.size(dowZoneBoxes1) > 0
+        for i = 0 to array.size(dowZoneBoxes1) - 1
+            box b = array.get(dowZoneBoxes1, i)
+            box.set_right(b, bar_index + 10)
+    if showDowZone2 and array.size(dowZoneBoxes2) > 0
+        for i = 0 to array.size(dowZoneBoxes2) - 1
+            box b = array.get(dowZoneBoxes2, i)
+            box.set_right(b, bar_index + 10)
 // ══════════════════════════════════════════════════════════════
 // P&B Signal ロジック
 // ══════════════════════════════════════════════════════════════
@@ -407,6 +484,19 @@ if barstate.isconfirmed
             label.new(ssb_maxIdx1, ssb_maxPrice1 + priceOffset, str.tostring(ssb_maxPrice1, "#.##"),
                  textcolor=lineColor1, style=label.style_none, size=size.normal)
         trend_status1_confirmed := f_calcTrendStatus(peakPx1, botPx1)
+        // ── P&B追跡: ピーク確定時 ──
+        if not na(prevPeak1)
+            if ssb_maxPrice1 > prevPeak1
+                if botRising1 and not na(prevBot1)
+                    if na(oshiYasune1) or prevBot1 > oshiYasune1
+                        oshiYasune1  := prevBot1
+                        oshiBroken1  := false
+                if ssb_maxPrice1 > prevPeak1 + noiseThreshold
+                    peakFalling1     := false
+                    modoriTakane1    := na
+                    modoriBroken1    := false
+            else if ssb_maxPrice1 < prevPeak1
+                peakFalling1 := true
         prevPeak2nd1    := prevPeak1
         prevPeak1       := ssb_maxPrice1
         ssb_findingMax1 := false
@@ -425,6 +515,19 @@ if barstate.isconfirmed
             label.new(ssb_minIdx1, ssb_minPrice1 - priceOffset, str.tostring(ssb_minPrice1, "#.##"),
                  textcolor=lineColor1, style=label.style_none, size=size.normal)
         trend_status1_confirmed := f_calcTrendStatus(peakPx1, botPx1)
+        // ── P&B追跡: ボトム確定時 ──
+        if not na(prevBot1)
+            if ssb_minPrice1 < prevBot1
+                if peakFalling1 and not na(prevPeak1)
+                    if na(modoriTakane1) or prevPeak1 < modoriTakane1
+                        modoriTakane1  := prevPeak1
+                        modoriBroken1  := false
+                if ssb_minPrice1 < prevBot1 - noiseThreshold
+                    botRising1     := false
+                    oshiYasune1    := na
+                    oshiBroken1    := false
+            else if ssb_minPrice1 > prevBot1
+                botRising1 := true
         prevBot2nd1     := prevBot1
         prevBot1        := ssb_minPrice1
         ssb_findingMin1 := false
@@ -452,6 +555,19 @@ if barstate.isconfirmed
         if showSwing2 and not na(ssb_minIdx2) and not na(ssb_minPrice2)
             line.new(ssb_minIdx2, ssb_minPrice2, ssb_maxIdx2, ssb_maxPrice2, color=lineColor2, width=lineWidth2)
         trend_status2_confirmed := f_calcTrendStatus(peakPx2, botPx2)
+        // ── P&B追跡: SW2ピーク確定時 ──
+        if not na(prevPeak2)
+            if ssb_maxPrice2 > prevPeak2
+                if botRising2 and not na(prevBot2)
+                    if na(oshiYasune2) or prevBot2 > oshiYasune2
+                        oshiYasune2  := prevBot2
+                        oshiBroken2  := false
+                if ssb_maxPrice2 > prevPeak2 + noiseThreshold
+                    peakFalling2     := false
+                    modoriTakane2    := na
+                    modoriBroken2    := false
+            else if ssb_maxPrice2 < prevPeak2
+                peakFalling2 := true
         prevPeak2nd2    := prevPeak2
         prevPeak2       := ssb_maxPrice2
         ssb_findingMax2 := false
@@ -467,12 +583,53 @@ if barstate.isconfirmed
         if showSwing2 and not na(ssb_maxIdx2) and not na(ssb_maxPrice2)
             line.new(ssb_maxIdx2, ssb_maxPrice2, ssb_minIdx2, ssb_minPrice2, color=lineColor2, width=lineWidth2)
         trend_status2_confirmed := f_calcTrendStatus(peakPx2, botPx2)
+        // ── P&B追跡: SW2ボトム確定時 ──
+        if not na(prevBot2)
+            if ssb_minPrice2 < prevBot2
+                if peakFalling2 and not na(prevPeak2)
+                    if na(modoriTakane2) or prevPeak2 < modoriTakane2
+                        modoriTakane2  := prevPeak2
+                        modoriBroken2  := false
+                if ssb_minPrice2 < prevBot2 - noiseThreshold
+                    botRising2     := false
+                    oshiYasune2    := na
+                    oshiBroken2    := false
+            else if ssb_minPrice2 > prevBot2
+                botRising2 := true
         prevBot2nd2     := prevBot2
         prevBot2        := ssb_minPrice2
         ssb_findingMin2 := false
         ssb_findingMax2 := true
         ssb_maxPrice2   := high
         ssb_maxIdx2     := bar_index
+// ══════════════════════════════════════════════════════════════
+// P&Bブレイク検出 → ゾーン生成
+// ══════════════════════════════════════════════════════════════
+if barstate.isconfirmed
+    // ── SW1 押し安値ブレイク（SELL Zone） ──
+    if not na(oshiYasune1) and not oshiBroken1
+        if close < oshiYasune1
+            oshiBroken1 := true
+            f_addDowZone1(bar_index, math.min(close, open), oshiYasune1, "sell")
+    // ── SW1 戻り高値ブレイク（BUY Zone） ──
+    if not na(modoriTakane1) and not modoriBroken1
+        if close > modoriTakane1
+            modoriBroken1 := true
+            f_addDowZone1(bar_index, modoriTakane1, math.max(close, open), "buy")
+    // ── SW2 押し安値ブレイク（SELL Zone） ──
+    if not na(oshiYasune2) and not oshiBroken2
+        if close < oshiYasune2
+            oshiBroken2 := true
+            f_addDowZone2(bar_index, math.min(close, open), oshiYasune2, "sell")
+    // ── SW2 戻り高値ブレイク（BUY Zone） ──
+    if not na(modoriTakane2) and not modoriBroken2
+        if close > modoriTakane2
+            modoriBroken2 := true
+            f_addDowZone2(bar_index, modoriTakane2, math.max(close, open), "buy")
+// ══════════════════════════════════════════════════════════════
+// ゾーンボックス更新（右端を現在バーに追従）
+// ══════════════════════════════════════════════════════════════
+f_updateDowZones()
 // ══════════════════════════════════════════════════════════════
 // リアルタイムトレンド判定
 // ══════════════════════════════════════════════════════════════
