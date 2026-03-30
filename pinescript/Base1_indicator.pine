@@ -1,5 +1,5 @@
 //@version=5
-indicator("SwingFusion Pro Base Indicator", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+indicator("SwingFusion Pro Base + Range Filter", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
 // ══════════════════════════════════════════════════════════════
 // ① 移動平均線 (SMA) + 傾斜色（MA個別設定）
 // ══════════════════════════════════════════════════════════════
@@ -95,6 +95,36 @@ waveFilterATR       = input.float(5.0, "波動フィルタ閾値(ATR倍率)", mi
      tooltip="SW1波動幅 / ATR がこの値以上なら伸びすぎと判断しPullbackスキップ")
 waveFilterPct       = input.float(3.0, "波動フィルタ閾値(％)", minval=0.5, maxval=15.0, step=0.5, group="③ 表示設定",
      tooltip="SW1波動率がこの値以上なら伸びすぎと判断しPullbackスキップ")
+// ══════════════════════════════════════════════════════════════
+// ④ レンジ検出 + ブレイクアウト
+// ══════════════════════════════════════════════════════════════
+grpRange            = "④ レンジ検出"
+useRangeDetect      = input.bool(true, "レンジ検出 ON/OFF", group=grpRange)
+rangeLookback       = input.int(16, "レンジ判定 Lookback", minval=5, maxval=50, group=grpRange,
+     tooltip="直近N本の高値/安値からレンジ幅を算出")
+rangeMinWidthAtr    = input.float(1.00, "最小レンジ幅 × ATR平均", minval=0.3, maxval=3.0, step=0.05, group=grpRange,
+     tooltip="レンジ幅がATR平均のこの倍率以上で「レンジ」と判定")
+rangeMaxWidthAtr    = input.float(3.00, "最大レンジ幅 × ATR平均", minval=1.5, maxval=10.0, step=0.10, group=grpRange,
+     tooltip="レンジ幅がこの倍率を超えるとレンジ判定しない（トレンド中）")
+rangeMaxSlopeAtr    = input.float(0.60, "最大傾き許容 × ATR平均", minval=0.10, maxval=2.0, step=0.05, group=grpRange,
+     tooltip="レンジ中心線の傾きがこの値以下でフラットと判定")
+rangeSlopeBars      = input.int(5, "傾き比較本数", minval=1, maxval=20, group=grpRange)
+rangeMinInsideRatio = input.float(0.70, "最低箱内滞在率", minval=0.30, maxval=1.00, step=0.05, group=grpRange)
+rangeInsideTolAtr   = input.float(0.10, "滞在判定の許容幅 × ATR", minval=0.0, maxval=0.50, step=0.01, group=grpRange)
+showRangeBG         = input.bool(false, "レンジ中に背景色表示", group=grpRange)
+showRangeBox        = input.bool(true, "レンジボックス表示", group=grpRange)
+
+grpBreakout         = "④-B ブレイクアウト"
+breakoutBufAtr      = input.float(0.15, "ブレイク判定バッファ × ATR", minval=0.0, maxval=1.0, step=0.05, group=grpBreakout,
+     tooltip="レンジ上限/下限からATR×この値を超えたらブレイク確定")
+breakoutCooldown    = input.int(8, "ブレイク後クールダウン本数", minval=0, maxval=30, group=grpBreakout,
+     tooltip="ブレイクシグナル後、次のレンジ検出を抑制する本数")
+showBreakoutLabel   = input.bool(true, "ブレイクラベル表示", group=grpBreakout)
+showBreakoutSW2     = input.bool(true, "SW2合流マーク表示", group=grpBreakout,
+     tooltip="ブレイク方向とSW2波動方向が一致した場合 ★ を付与")
+showBreakoutLevel   = input.bool(true, "ブレイク節目ライン表示", group=grpBreakout,
+     tooltip="上抜け→下限を支持線、下抜け→上限を抵抗線として延長表示")
+breakoutLevelMax    = input.int(50, "節目ライン最大表示数", minval=1, maxval=100, group=grpBreakout)
 // ══════════════════════════════════════════════════════════════
 // ⑤ ATR Bands
 // ══════════════════════════════════════════════════════════════
@@ -253,6 +283,146 @@ sigOffset1    = atrValue * signalOffset1Mult
 sigOffset2    = atrValue * signalOffset2Mult
 priceOffset   = atrValue * priceLabelOffsetMult
 noiseThreshold = atrValue * noiseFilterATR
+// ══════════════════════════════════════════════════════════════
+// レンジ検出ロジック
+// ══════════════════════════════════════════════════════════════
+rngATR    = ta.atr(14)
+rngATRAvg = ta.sma(rngATR, rangeLookback)
+
+rngHigh = ta.highest(high, rangeLookback)
+rngLow  = ta.lowest(low, rangeLookback)
+rngMid  = (rngHigh + rngLow) / 2.0
+rngW    = rngHigh - rngLow
+
+// 条件1: レンジ幅がATR平均に対して適正範囲
+rngWidthOK = not na(rngATRAvg) and rngATRAvg > 0 and rngW >= rngATRAvg * rangeMinWidthAtr and rngW <= rngATRAvg * rangeMaxWidthAtr
+
+// 条件2: 中心線の傾きがフラット
+rngSlope   = math.abs(rngMid - nz(rngMid[rangeSlopeBars]))
+rngSlopeOK = not na(rngATRAvg) and rngATRAvg > 0 and rngSlope <= rngATRAvg * rangeMaxSlopeAtr
+
+// 条件3: 箱内滞在率
+rngInsideTol = rngATR * rangeInsideTolAtr
+rngInsideSrc = (close <= rngHigh + rngInsideTol and close >= rngLow - rngInsideTol) ? 1.0 : 0.0
+rngInsideBars  = int(math.round(math.sum(rngInsideSrc, rangeLookback)))
+rngInsideRatio = rangeLookback > 0 ? rngInsideBars / rangeLookback : 0.0
+rngStayOK = rngInsideRatio >= rangeMinInsideRatio
+
+// 総合レンジ判定
+isInRange = useRangeDetect and rngWidthOK and rngSlopeOK and rngStayOK
+
+// ── ブレイクアウト検出ステートマシン ──
+var bool  rngActive    = false       // レンジ確定済みフラグ
+var float rngActiveTop = na          // 確定レンジの上限
+var float rngActiveBot = na          // 確定レンジの下限
+var int   rngCooldown  = 0           // ブレイク後のクールダウン
+var box   rngActiveBox = na          // 現在のレンジボックス
+
+rngCooldown := rngCooldown > 0 ? rngCooldown - 1 : 0
+
+// レンジ開始/継続
+if isInRange and rngCooldown == 0
+    if not rngActive
+        // 新規レンジ確定
+        rngActive    := true
+        rngActiveTop := rngHigh
+        rngActiveBot := rngLow
+        if showRangeBox
+            rngActiveBox := box.new(bar_index - rangeLookback + 1, rngHigh, bar_index, rngLow,
+                 border_color=color.new(color.yellow, 20), border_width=2,
+                 bgcolor=color.new(color.yellow, 90))
+    else
+        // レンジ継続 → 上下・右端を更新
+        rngActiveTop := rngHigh
+        rngActiveBot := rngLow
+        if showRangeBox and not na(rngActiveBox)
+            box.set_right(rngActiveBox, bar_index)
+            box.set_top(rngActiveBox, rngHigh)
+            box.set_bottom(rngActiveBox, rngLow)
+
+// ブレイクアウト判定
+breakBuf     = rngATR * breakoutBufAtr
+rngBreakUp   = rngActive and close > rngActiveTop + breakBuf
+rngBreakDown = rngActive and close < rngActiveBot - breakBuf
+
+// レンジ条件崩れ（ブレイクなし） → ボックスをグレーアウトして解除
+rngDrift = rngActive and not isInRange and not rngBreakUp and not rngBreakDown
+var int rngDriftCount = 0
+rngDriftCount := rngDrift ? nz(rngDriftCount[1]) + 1 : 0
+rngExpired = rngDriftCount >= 3   // 3本連続でレンジ条件から外れたら失効
+
+// SW2方向との合流判定
+sw2AlignUp   = rngBreakUp   and (pbState2 == "上昇波動")
+sw2AlignDown = rngBreakDown and (pbState2 == "下落波動")
+
+// 節目ライン管理用配列
+var array<line> breakLevelLines  = array.new<line>()
+var array<float> breakLevelPrices = array.new<float>()
+
+// ブレイク処理
+if rngBreakUp
+    if showRangeBox and not na(rngActiveBox)
+        box.set_border_color(rngActiveBox, color.new(color.lime, 10))
+        box.set_bgcolor(rngActiveBox, color.new(color.lime, 88))
+    if showBreakoutLabel
+        string _brLabel = showBreakoutSW2 and sw2AlignUp ? "Break\nBuy ★" : "Break\nBuy"
+        color  _brColor = sw2AlignUp ? color.lime : color.new(color.lime, 40)
+        label.new(bar_index, low - sigOffset2 * 1.5, _brLabel, style=label.style_none, textcolor=_brColor, size=size.normal)
+        line.new(bar_index, low - sigOffset2 * 1.5, bar_index, low, color=_brColor, width=1, style=line.style_dashed)
+    // 節目ライン: 上抜け → 下限が支持線
+    if showBreakoutLevel
+        if array.size(breakLevelLines) >= breakoutLevelMax
+            line.delete(array.shift(breakLevelLines))
+            array.shift(breakLevelPrices)
+        line _lvl = line.new(bar_index, rngActiveBot, bar_index + 1, rngActiveBot,
+             color=color.new(color.purple, 0), width=1, style=line.style_dashed, extend=extend.right)
+        array.push(breakLevelLines, _lvl)
+        array.push(breakLevelPrices, rngActiveBot)
+    rngActive    := false
+    rngActiveTop := na
+    rngActiveBot := na
+    rngActiveBox := na
+    rngCooldown  := breakoutCooldown
+    rngDriftCount := 0
+
+if rngBreakDown
+    if showRangeBox and not na(rngActiveBox)
+        box.set_border_color(rngActiveBox, color.new(color.red, 10))
+        box.set_bgcolor(rngActiveBox, color.new(color.red, 88))
+    if showBreakoutLabel
+        string _brLabel = showBreakoutSW2 and sw2AlignDown ? "Break\nSell ★" : "Break\nSell"
+        color  _brColor = sw2AlignDown ? color.red : color.new(color.red, 40)
+        label.new(bar_index, high + sigOffset2 * 1.5, _brLabel, style=label.style_none, textcolor=_brColor, size=size.normal)
+        line.new(bar_index, high + sigOffset2 * 1.5, bar_index, high, color=_brColor, width=1, style=line.style_dashed)
+    // 節目ライン: 下抜け → 上限が抵抗線
+    if showBreakoutLevel
+        if array.size(breakLevelLines) >= breakoutLevelMax
+            line.delete(array.shift(breakLevelLines))
+            array.shift(breakLevelPrices)
+        line _lvl = line.new(bar_index, rngActiveTop, bar_index + 1, rngActiveTop,
+             color=color.new(color.purple, 0), width=1, style=line.style_dashed, extend=extend.right)
+        array.push(breakLevelLines, _lvl)
+        array.push(breakLevelPrices, rngActiveTop)
+    rngActive    := false
+    rngActiveTop := na
+    rngActiveBot := na
+    rngActiveBox := na
+    rngCooldown  := breakoutCooldown
+    rngDriftCount := 0
+
+if rngExpired
+    if showRangeBox and not na(rngActiveBox)
+        box.set_border_color(rngActiveBox, color.new(color.gray, 40))
+        box.set_bgcolor(rngActiveBox, color.new(color.gray, 92))
+    rngActive    := false
+    rngActiveTop := na
+    rngActiveBot := na
+    rngActiveBox := na
+    rngCooldown  := breakoutCooldown
+    rngDriftCount := 0
+
+// ── レンジ中の背景色 ──
+bgcolor(showRangeBG and rngActive ? color.new(color.yellow, 92) : na, title="Range BG")
 // ══════════════════════════════════════════════════════════════
 // ヘルパー関数
 // ══════════════════════════════════════════════════════════════
@@ -666,7 +836,7 @@ if showB1P1Lines2
         int p1_idx = array.size(peakIx2) >= 1 ? array.get(peakIx2, array.size(peakIx2) - 1) : bar_index
         p1_line2 := line.new(p1_idx, last_P1_2, bar_index + 10, last_P1_2, color=color.red, width=2, style=line.style_dashed)
 // ══════════════════════════════════════════════════════════════
-// トレンドテーブル表示（4列: name | トレンド | 波動 | 転換価格）
+// トレンドテーブル表示（4列: name | トレンド | 波動 | 転換価格 + レンジ行）
 // ══════════════════════════════════════════════════════════════
 var table trendTable = na
 if showTrendTable
@@ -681,8 +851,9 @@ if showTrendTable
         "bottom_center" => position.bottom_center
         "bottom_right"  => position.bottom_right
         => position.top_right
+    int trendTableRows = useRangeDetect ? 4 : 3
     if na(trendTable)
-        trendTable := table.new(tablePos, 4, 3, border_width=1)
+        trendTable := table.new(tablePos, 4, trendTableRows, border_width=1)
     // ── row 0: ヘッダー ──
     table.cell(trendTable, 0, 0, "", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 1, 0, "トレンド", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
@@ -700,6 +871,16 @@ if showTrendTable
     table.cell(trendTable, 1, 2, f_trendToJapanese(trend_status2), bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 2, 2, pbState2, bgcolor=pb2Color, text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 3, 2, str.tostring(turnPrice2, "#.##") + " " + turnDir2, bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+    // ── row 3: レンジ + ブレイク状態 ──
+    if useRangeDetect
+        string rngStatus = rngActive ? "レンジ中" : rngCooldown > 0 ? "CD " + str.tostring(rngCooldown) : "---"
+        string rngDir    = rngActive ? "監視中" : "---"
+        string rngInfo   = rngActive ? str.tostring(rngActiveBot, "#.##") + " - " + str.tostring(rngActiveTop, "#.##") : "---"
+        color  rngBG     = rngActive ? color.rgb(180, 150, 0) : rngCooldown > 0 ? color.rgb(100, 100, 100) : color.rgb(70, 70, 70)
+        table.cell(trendTable, 0, 3, "Range", bgcolor=color.rgb(150, 130, 30), text_color=color.white, text_size=size.normal)
+        table.cell(trendTable, 1, 3, rngStatus, bgcolor=rngBG, text_color=color.white, text_size=size.normal)
+        table.cell(trendTable, 2, 3, rngDir, bgcolor=rngBG, text_color=color.white, text_size=size.normal)
+        table.cell(trendTable, 3, 3, rngInfo, bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
 // ══════════════════════════════════════════════════════════════
 // ATR Stop/TP テーブル
 // ══════════════════════════════════════════════════════════════
@@ -760,3 +941,7 @@ alertcondition(bottomCondition2, title="Swing2 P&B Long", message="Swing2 P&B Lo
 alertcondition(peakCondition2, title="Swing2 P&B Short", message="Swing2 P&B Short Signal - {{ticker}} @ {{close}}")
 alertcondition(pullbackDone and sw2Dir == "Buy", title="Pullback Buy", message="Pullback Buy Signal - {{ticker}} @ {{close}}")
 alertcondition(pullbackDone and sw2Dir == "Sell", title="Pullback Sell", message="Pullback Sell Signal - {{ticker}} @ {{close}}")
+alertcondition(rngBreakUp,   title="Range Break Up",   message="レンジ上抜け - {{ticker}} @ {{close}}")
+alertcondition(rngBreakDown, title="Range Break Down",  message="レンジ下抜け - {{ticker}} @ {{close}}")
+alertcondition(sw2AlignUp,   title="Break+SW2 Buy",     message="レンジ上抜け + SW2合流 Buy - {{ticker}} @ {{close}}")
+alertcondition(sw2AlignDown, title="Break+SW2 Sell",    message="レンジ下抜け + SW2合流 Sell - {{ticker}} @ {{close}}")
