@@ -1,0 +1,250 @@
+//@version=6
+indicator("BB Range Filter", overlay=true, max_labels_count=500)
+
+// ============================================================
+// BB レンジフィルター v2
+// 目的: レンジ相場を検出し取引回避 + ブレイクアウトを捕捉
+// 改善点:
+//   - 逆張りシグナル削除（フィルター専用）
+//   - ADX併用でトレンド有無を二重確認
+//   - BW閾値デフォルト12%に引き下げ
+//   - 連続N本確定でチャタリング防止
+//   - スクイーズ継続期間の可視化
+//   - ブレイク時の出来高確認
+// ============================================================
+
+// ----------------------------------------------------
+// 入力パラメータ
+// ----------------------------------------------------
+groupBB     = "BB設定"
+groupRule   = "レンジ判定ルール"
+groupADX    = "ADXフィルター"
+groupStable = "安定化"
+groupBO     = "ブレイクアウト設定"
+groupVis    = "表示設定"
+
+bbLen  = input.int(20, "BB期間", minval=1, group=groupBB)
+bbMult = input.float(2.0, "標準偏差", step=0.1, group=groupBB)
+
+bwLookback      = input.int(100, "BandWidth比較本数", minval=20, group=groupRule)
+bwRankThreshold = input.float(8.0, "BandWidth下位％しきい値", minval=1, maxval=50, step=0.5, group=groupRule, tooltip="低いほど厳選。8%推奨")
+
+rangeWindow       = input.int(15, "レンジ確認本数", minval=5, group=groupRule)
+outsideCheckBars  = input.int(10, "連続バンド外チェック本数", minval=2, group=groupRule)
+flatLookback      = input.int(5, "ミドルバンド傾き確認本数", minval=1, group=groupRule)
+maxBasisChangePct = input.float(0.15, "横ばい判定(%): N本前比", minval=0.01, step=0.01, group=groupRule)
+
+upperNearThreshold = input.float(0.90, "上バンド接近 %B しきい値", minval=0.50, maxval=1.20, step=0.01, group=groupRule)
+lowerNearThreshold = input.float(0.10, "下バンド接近 %B しきい値", minval=-0.20, maxval=0.50, step=0.01, group=groupRule)
+
+// ADX
+useADX       = input.bool(true, "ADXフィルターを使用", group=groupADX)
+adxLen       = input.int(14, "ADX期間", minval=1, group=groupADX)
+adxThreshold = input.float(15.0, "ADX上限（これ以下=レンジ）", minval=5, maxval=50, step=1.0, group=groupADX, tooltip="低いほど厳格。15推奨")
+
+// 安定化
+minRangeBars = input.int(5, "最低連続確定本数", minval=1, maxval=20, group=groupStable, tooltip="点滅防止。5推奨")
+cooldownBars = input.int(2, "フィルター解除後の猶予本数", minval=0, maxval=10, group=groupStable, tooltip="解除直後の早まったエントリーを防ぐ")
+
+// ブレイクアウト
+useVolFilter = input.bool(true, "出来高フィルターを使用", group=groupBO, tooltip="先物は出来高あり。株式指数も有効")
+volLen       = input.int(20, "出来高SMA期間", minval=5, group=groupBO)
+volMult      = input.float(1.3, "出来高倍率しきい値", minval=1.0, maxval=3.0, step=0.1, group=groupBO, tooltip="1.3 = 平均の1.3倍以上で確認")
+
+showBBands      = input.bool(false, "BBバンド線を描画", group=groupVis, tooltip="他インジケーターでBB表示済みならOFF")
+showBBFill      = input.bool(true, "BB帯フィル描画", group=groupVis, tooltip="上下バンド間の塗りつぶし")
+showCandidateBg = input.bool(true, "候補背景色", group=groupVis)
+candidateBgColor = input.color(color.orange, "候補背景色カラー", group=groupVis)
+candidateBgTransp = input.int(92, "候補背景 透明度", minval=50, maxval=99, group=groupVis)
+showFilterBg    = input.bool(true, "フィルター有効背景色", group=groupVis)
+filterBgColor    = input.color(color.yellow, "フィルター背景色カラー", group=groupVis)
+filterBgTransp   = input.int(84, "フィルター背景 透明度", minval=50, maxval=99, group=groupVis)
+cooldownBgColor  = input.color(color.yellow, "クールダウン背景色カラー", group=groupVis)
+cooldownBgTransp = input.int(90, "クールダウン背景 透明度", minval=50, maxval=99, group=groupVis)
+showBreakouts   = input.bool(true, "ブレイク表示", group=groupVis)
+showSqueezeDur  = input.bool(true, "スクイーズ期間ラベル", group=groupVis)
+
+// ----------------------------------------------------
+// ボリンジャーバンド計算
+// ----------------------------------------------------
+basis = ta.sma(close, bbLen)
+dev   = bbMult * ta.stdev(close, bbLen)
+upper = basis + dev
+lower = basis - dev
+
+// BandWidth (%)
+bandWidth = basis != 0 ? ((upper - lower) / basis) * 100 : na
+
+// %B
+percentB = (upper - lower) != 0 ? (close - lower) / (upper - lower) : 0.5
+
+// ----------------------------------------------------
+// ルール1: BandWidthが相対的に低い
+// ----------------------------------------------------
+bwRank = ta.percentrank(bandWidth, bwLookback)
+bwLow  = not na(bwRank) and bwRank <= bwRankThreshold
+
+// ----------------------------------------------------
+// ルール2: 価格が上下バンド付近を往復している
+// ----------------------------------------------------
+upperNear = percentB >= upperNearThreshold
+lowerNear = percentB <= lowerNearThreshold
+
+barsSinceUpperNear = ta.barssince(upperNear)
+barsSinceLowerNear = ta.barssince(lowerNear)
+
+touchedBothSides =
+     not na(barsSinceUpperNear) and
+     not na(barsSinceLowerNear) and
+     barsSinceUpperNear <= rangeWindow and
+     barsSinceLowerNear <= rangeWindow
+
+// ----------------------------------------------------
+// ルール3: 連続でバンド外に定着していない
+// ----------------------------------------------------
+outsideUp = close > upper
+outsideDn = close < lower
+
+consecutiveOutside =
+     (outsideUp and outsideUp[1]) or
+     (outsideDn and outsideDn[1])
+
+consecutiveOutsideCount = math.sum(consecutiveOutside ? 1 : 0, outsideCheckBars)
+noConsecutiveOutside    = consecutiveOutsideCount == 0
+
+// ----------------------------------------------------
+// ルール4: ミドルバンドがほぼ横ばい
+// ----------------------------------------------------
+basisChangePct =
+     not na(basis[flatLookback]) and basis[flatLookback] != 0
+     ? math.abs((basis - basis[flatLookback]) / basis[flatLookback]) * 100
+     : na
+
+basisFlat = not na(basisChangePct) and basisChangePct <= maxBasisChangePct
+
+// ----------------------------------------------------
+// ルール5: 終値が直近レンジ高値/安値をまだ壊していない
+// ----------------------------------------------------
+rangeHigh = ta.highest(high[1], rangeWindow)
+rangeLow  = ta.lowest(low[1], rangeWindow)
+
+closeInsideRange =
+     not na(rangeHigh) and not na(rangeLow) and
+     close <= rangeHigh and close >= rangeLow
+
+// ----------------------------------------------------
+// ルール6: ADXが低い（トレンドなし）
+// ----------------------------------------------------
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+adxLow = not useADX or (not na(adxVal) and adxVal < adxThreshold)
+
+// ----------------------------------------------------
+// 総合判定
+// ----------------------------------------------------
+rangeCandidate = bwLow and noConsecutiveOutside
+rangeConfirmed = rangeCandidate and touchedBothSides and basisFlat and closeInsideRange and adxLow
+
+// ----------------------------------------------------
+// 安定化: 連続N本確定でフィルター有効化
+// チャタリング防止 + 解除後クールダウン
+// ----------------------------------------------------
+var int confirmedCount = 0
+confirmedCount := rangeConfirmed ? confirmedCount + 1 : 0
+
+rangeFilter = confirmedCount >= minRangeBars
+
+// クールダウン: フィルター解除後もN本間は取引回避を維持
+barsSinceFilterOff = ta.barssince(rangeFilter)
+inCooldown = not rangeFilter and not na(barsSinceFilterOff) and barsSinceFilterOff <= cooldownBars and barsSinceFilterOff > 0
+
+// 最終フィルター（true = 取引回避すべき）
+noTradeZone = rangeFilter or inCooldown
+
+// ----------------------------------------------------
+// スクイーズ継続期間（ブレイクの信頼度指標）
+// ----------------------------------------------------
+var int squeezeDuration = 0
+squeezeDuration := rangeFilter ? squeezeDuration + 1 : 0
+
+// ----------------------------------------------------
+// ブレイクアウト検出（強化版）
+// rangeFilter有効中 or 直後 → バンド＆レンジ外へ抜ける
+// ----------------------------------------------------
+volSma       = ta.sma(volume, volLen)
+volExpansion = not useVolFilter or (not na(volSma) and volSma > 0 and volume > volSma * volMult)
+
+// ブレイク判定: フィルター中 or クールダウン中からの脱出
+wasInRange = rangeFilter[1] or inCooldown[1]
+
+breakoutUp = wasInRange and close > upper and close > rangeHigh and volExpansion
+breakoutDn = wasInRange and close < lower and close < rangeLow  and volExpansion
+
+// ブレイク時のスクイーズ期間を記録（ラベル表示用）
+var int lastSqueezeDur = 0
+if breakoutUp or breakoutDn
+    lastSqueezeDur := squeezeDuration[1] > 0 ? squeezeDuration[1] : nz(confirmedCount[1])
+
+// ----------------------------------------------------
+// 描画
+// ----------------------------------------------------
+// BBバンド線（デフォルトOFF: 他インジケーターと二重描画を防ぐ）
+bbTransp    = showBBands ? 0 : 100
+basisPlot   = plot(basis, "Basis", color=color.new(color.blue, bbTransp), linewidth=2)
+upperPlot   = plot(upper, "Upper", color=color.new(color.gray, bbTransp))
+lowerPlot   = plot(lower, "Lower", color=color.new(color.gray, bbTransp))
+
+// BB帯フィル（状態により色分け）
+fillColor =
+     not showBBFill ? na :
+     rangeFilter    ? color.new(filterBgColor, 85) :
+     inCooldown     ? color.new(cooldownBgColor, 88) :
+     rangeCandidate ? color.new(candidateBgColor, 93) :
+     color.new(color.aqua, 96)
+
+fill(upperPlot, lowerPlot, color=fillColor, title="BB Fill")
+
+// 背景色（カラー・透明度をパラメータから取得）
+bgcolor(showCandidateBg and rangeCandidate and not rangeFilter and not inCooldown ? color.new(candidateBgColor, candidateBgTransp) : na, title="候補背景")
+bgcolor(showFilterBg and rangeFilter ? color.new(filterBgColor, filterBgTransp) : na, title="フィルター有効背景")
+bgcolor(showFilterBg and inCooldown ? color.new(cooldownBgColor, cooldownBgTransp) : na, title="クールダウン背景")
+
+// 状態マーカー
+plotchar(rangeCandidate and not rangeFilter and not inCooldown, title="Range Candidate", char="C", location=location.top, color=color.orange, size=size.tiny)
+plotchar(rangeFilter, title="Range Filter Active", char="R", location=location.top, color=color.yellow, size=size.tiny)
+plotchar(inCooldown, title="Cooldown", char="·", location=location.top, color=color.gray, size=size.tiny)
+
+// ブレイク表示
+plotshape(showBreakouts and breakoutUp, title="Breakout Up",   style=shape.arrowup,   location=location.belowbar, color=color.green,  size=size.normal, text="BO↑")
+plotshape(showBreakouts and breakoutDn, title="Breakout Down", style=shape.arrowdown, location=location.abovebar, color=color.maroon, size=size.normal, text="BO↓")
+
+// ブレイク時にスクイーズ期間をラベル表示
+if showSqueezeDur and breakoutUp
+    label.new(bar_index, low, "Sq:" + str.tostring(lastSqueezeDur), style=label.style_label_up, color=color.new(color.green, 30), textcolor=color.white, size=size.small)
+if showSqueezeDur and breakoutDn
+    label.new(bar_index, high, "Sq:" + str.tostring(lastSqueezeDur), style=label.style_label_down, color=color.new(color.maroon, 30), textcolor=color.white, size=size.small)
+
+// レンジ高値/安値ライン（フィルター中のみ）
+plot(rangeFilter ? rangeHigh : na, "Range High", color=color.new(color.green, 50), style=plot.style_stepline, linewidth=1)
+plot(rangeFilter ? rangeLow  : na, "Range Low",  color=color.new(color.red, 50),   style=plot.style_stepline, linewidth=1)
+
+// ----------------------------------------------------
+// データウィンドウ表示用
+// ----------------------------------------------------
+plot(bandWidth, "BandWidth %", color=color.new(color.purple, 0), display=display.data_window)
+plot(bwRank, "BW PercentRank", color=color.new(color.fuchsia, 0), display=display.data_window)
+plot(percentB, "%B", color=color.new(color.teal, 0), display=display.data_window)
+plot(basisChangePct, "Basis Change %", color=color.new(color.navy, 0), display=display.data_window)
+plot(adxVal, "ADX", color=color.new(color.olive, 0), display=display.data_window)
+plot(confirmedCount, "Confirmed Count", color=color.new(color.gray, 0), display=display.data_window)
+plot(squeezeDuration, "Squeeze Duration", color=color.new(color.maroon, 0), display=display.data_window)
+plot(noTradeZone ? 1 : 0, "No Trade Zone", color=color.new(color.red, 0), display=display.data_window)
+plot(rangeHigh, "Range High", color=color.new(color.green, 70), display=display.data_window)
+plot(rangeLow, "Range Low", color=color.new(color.red, 70), display=display.data_window)
+
+// ----------------------------------------------------
+// アラート
+// ----------------------------------------------------
+alertcondition(rangeFilter and not rangeFilter[1], "レンジフィルター開始", "レンジ確定 → 取引回避ゾーン開始")
+alertcondition(not noTradeZone and noTradeZone[1], "取引回避解除", "レンジフィルター+クールダウン終了")
+alertcondition(breakoutUp, "BB上方ブレイク", "スクイーズ後の上方ブレイク（出来高確認済み）")
+alertcondition(breakoutDn, "BB下方ブレイク", "スクイーズ後の下方ブレイク（出来高確認済み）")
