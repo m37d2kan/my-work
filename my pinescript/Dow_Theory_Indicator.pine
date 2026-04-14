@@ -5,70 +5,82 @@ indicator("Dow Theory Indicator", overlay=true,
 // Dow Theory Trading Strategy
 // SW2 戻り高値ブレイク → プルバック → 再上抜け → SW1 PB1ロング
 // SW2 押し安値ブレイク → バウンス  → 再下抜け → SW1 P1ショート
-// ベース: Dow Zone (SW1/SW2) インジケーター
+// ベース: Dow Zone (SW1/SW2/SW3) インジケーター
 // ══════════════════════════════════════════════════════════════
 
-// ── スイング設定 ──
+// ── ① スイング設定 ──
 grpSwing       = "① スイング設定"
-length1        = input.int(5, "SW1 ルックバック期間", minval=1, group=grpSwing)
-length2        = input.int(20, "SW2 ルックバック期間", minval=1, group=grpSwing)
+length1        = input.int(7,   "SW1 ルックバック期間", minval=1, group=grpSwing)
+length2        = input.int(28,  "SW2 ルックバック期間", minval=1, group=grpSwing)
+length3        = input.int(112, "SW3 ルックバック期間", minval=1, group=grpSwing)
 showSwing1     = input.bool(true, "SW1 スイングライン表示", group=grpSwing)
 showSwing2     = input.bool(true, "SW2 スイングライン表示", group=grpSwing)
+showSwing3     = input.bool(true, "SW3 スイングライン表示", group=grpSwing)
 lineWidth1     = input.int(1, "SW1 線の太さ", minval=1, maxval=4, group=grpSwing)
 lineWidth2     = input.int(1, "SW2 線の太さ", minval=1, maxval=4, group=grpSwing)
-lineColor1     = input.color(color.black, "SW1 色", group=grpSwing)
+lineWidth3     = input.int(2, "SW3 線の太さ", minval=1, maxval=4, group=grpSwing)
+lineColor1     = input.color(color.black,  "SW1 色", group=grpSwing)
 lineColor2     = input.color(color.purple, "SW2 色", group=grpSwing)
-showPriceLabel1 = input.bool(true, "SW1 価格ラベル", group=grpSwing)
+lineColor3     = input.color(color.navy,   "SW3 色", group=grpSwing)
+showPriceLabel1 = input.bool(true,  "SW1 価格ラベル", group=grpSwing)
 showPriceLabel2 = input.bool(false, "SW2 価格ラベル", group=grpSwing)
+showPriceLabel3 = input.bool(false, "SW3 価格ラベル", group=grpSwing)
 
-// ── P&B表示設定 ──
+// ── ② P&Bシグナル ──
 grpPB          = "② P&Bシグナル"
 showPB1        = input.bool(true, "SW1 P&B表示", group=grpPB)
 showPB2        = input.bool(true, "SW2 P&B表示", group=grpPB)
-pbCol1Up       = input.color(color.teal, "SW1 Long色", group=grpPB)
+showPB3        = input.bool(true, "SW3 P&B表示", group=grpPB)
+pbCol1Up       = input.color(color.teal,   "SW1 Long色",  group=grpPB)
 pbCol1Down     = input.color(color.orange, "SW1 Short色", group=grpPB)
-pbCol2Up       = input.color(color.teal, "SW2 Long色", group=grpPB)
+pbCol2Up       = input.color(color.teal,   "SW2 Long色",  group=grpPB)
 pbCol2Down     = input.color(color.purple, "SW2 Short色", group=grpPB)
+pbCol3Up       = input.color(color.green,  "SW3 Long色",  group=grpPB)
+pbCol3Down     = input.color(color.maroon, "SW3 Short色", group=grpPB)
 showB1P1Lines1 = input.bool(true, "SW1 B1/P1ライン表示", group=grpPB)
 showB1P1Lines2 = input.bool(true, "SW2 B1/P1ライン表示", group=grpPB)
+showB1P1Lines3 = input.bool(true, "SW3 B1/P1ライン表示", group=grpPB)
 
-// ── ブレイク設定 ──
+// ── ③ ブレイク設定 ──
 grpBreak       = "③ ブレイク設定"
 atrPeriod      = input.int(14, "ATR期間", minval=1, maxval=100, group=grpBreak)
 noiseFilterATR = input.float(0.3, "P&Bノイズフィルタ(ATR倍率)", minval=0, maxval=2.0, step=0.05, group=grpBreak,
      tooltip="高値/安値更新がATR×この値未満の場合、押安/戻高をクリアしない。0=従来動作")
-oshiBreakColor  = input.color(color.red, "押し安値ブレイク色", group=grpBreak)
+oshiBreakColor   = input.color(color.red,  "押し安値ブレイク色",  group=grpBreak)
 modoriBreakColor = input.color(color.blue, "戻り高値ブレイク色", group=grpBreak)
-showBreakLevel1     = input.bool(true, "SW1 ブレイクレベル横線表示", group=grpBreak)
-showBreakLevel2     = input.bool(true, "SW2 ブレイクレベル横線表示", group=grpBreak)
-breakLevelBuyColor  = input.color(color.blue, "BUYブレイクレベル色", group=grpBreak)
-breakLevelSellColor = input.color(color.red, "SELLブレイクレベル色", group=grpBreak)
-breakZoneColor      = input.color(color.new(color.gray, 80), "ブレイク縦ゾーン色", group=grpBreak)
+showBreakLevel1      = input.bool(true, "SW1 ブレイクレベル横線表示", group=grpBreak)
+showBreakLevel2      = input.bool(true, "SW2 ブレイクレベル横線表示", group=grpBreak)
+showBreakLevel3      = input.bool(true, "SW3 ブレイクレベル横線表示", group=grpBreak)
+breakLevelBuyColor   = input.color(color.blue,   "SW1 BUYブレイクレベル色",  group=grpBreak)
+breakLevelSellColor  = input.color(color.red,    "SW1 SELLブレイクレベル色", group=grpBreak)
+breakLevelBuyColor2  = input.color(color.teal,   "SW2 BUYブレイクレベル色",  group=grpBreak)
+breakLevelSellColor2 = input.color(color.orange, "SW2 SELLブレイクレベル色", group=grpBreak)
+breakLevelBuyColor3  = input.color(color.green,  "SW3 BUYブレイクレベル色",  group=grpBreak)
+breakLevelSellColor3 = input.color(color.maroon, "SW3 SELLブレイクレベル色", group=grpBreak)
 
-// ── ゾーン設定 ──
-grpZone        = "④ ゾーン設定"
-showDowZone1   = input.bool(true, "SW1 ゾーン表示", group=grpZone)
-dowZoneMaxCount1   = input.int(5, "SW1 ゾーン最大表示数", minval=1, maxval=20, group=grpZone)
-dowZoneExtendBars1 = input.int(100, "SW1 ゾーン延長バー数", minval=10, maxval=500, group=grpZone)
-dowZone1Color      = input.color(color.new(color.gray, 80), "SW1 ゾーン色", group=grpZone)
-showDowZone2   = input.bool(true, "SW2 ゾーン表示", group=grpZone)
-dowZoneMaxCount2   = input.int(10, "SW2 ゾーン最大表示数", minval=1, maxval=20, group=grpZone)
-dowZoneExtendBars2 = input.int(100, "SW2 ゾーン延長バー数", minval=10, maxval=500, group=grpZone)
-dowZone2Color      = input.color(color.new(color.purple, 85), "SW2 ゾーン色", group=grpZone)
+// ── ④ ストラテジー設定 ──
+grpStrat           = "④ ストラテジー設定"
+showEntryLabel     = input.bool(true, "エントリーラベル表示", group=grpStrat)
+lcMethod           = input.string("前足安値/高値", "LC基準", options=["前足安値/高値", "SW2直近ボトム/ピーク"], group=grpStrat,
+     tooltip="Long: 前足安値 or SW2直近ボトム / Short: 前足高値 or SW2直近ピーク")
+lcBuffer           = input.float(50.0, "LCバッファー(±pt)", minval=0, maxval=500, step=5, group=grpStrat)
+rrRatio            = input.float(1.5, "RR比率(TP)", minval=0.5, maxval=10.0, step=0.1, group=grpStrat)
+maxEntryPerStandby = input.int(2, "スタンバイ毎エントリー上限", minval=1, maxval=10, group=grpStrat,
+     tooltip="SW3スタンバイ1回あたりの最大エントリー回数")
 
-// ── ストラテジー設定 ──
-grpStrat           = "⑥ ストラテジー設定"
-tradeDir           = input.string("Both", "トレード方向", options=["Both", "Long Only", "Short Only"], group=grpStrat)
-lcBufferATR        = input.float(1.0, "LC バッファー(ATR倍率)", minval=0.1, maxval=5.0, step=0.1, group=grpStrat)
-rrRatio            = input.float(2.0, "RR比率", minval=0.5, maxval=10.0, step=0.5, group=grpStrat)
-showEntryLabel     = input.bool(false, "エントリーラベル表示", group=grpStrat)
-startDate          = input.time(timestamp("2024-01-01"), "バックテスト開始日", group=grpStrat)
-endDate            = input.time(timestamp("2099-12-31"), "バックテスト終了日", group=grpStrat)
-
-// ── テーブル設定 ──
+// ── ⑤ テーブル設定 ──
 grpTable           = "⑤ テーブル表示"
 showTrendTable     = input.bool(true, "トレンドテーブル表示", group=grpTable)
 tablePosition      = input.string("bottom_right", "トレンドテーブル位置", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group=grpTable)
+
+// ── ⑥ アラート設定 ──
+grpAlert           = "⑥ アラート設定"
+alertPB1Long       = input.bool(true, "SW1 PB1 Long(上昇波動)アラート",  group=grpAlert)
+alertPB1Short      = input.bool(true, "SW1 P1 Short(下落波動)アラート",  group=grpAlert)
+alertPB2Long       = input.bool(true, "SW2 PB1 Long(上昇波動)アラート",  group=grpAlert)
+alertPB2Short      = input.bool(true, "SW2 P1 Short(下落波動)アラート",  group=grpAlert)
+alertPB3Long       = input.bool(true, "SW3 PB1 Long(上昇波動)アラート",  group=grpAlert)
+alertPB3Short      = input.bool(true, "SW3 P1 Short(下落波動)アラート",  group=grpAlert)
 
 // ══════════════════════════════════════════════════════════════
 // 変数宣言
@@ -82,8 +94,10 @@ priceOffset    = atrValue * 0.3
 // ── P&B Signal ──
 var string lastPBSignal1 = na
 var string lastPBSignal2 = na
+var string lastPBSignal3 = na
 var string pbState1 = "---"
 var string pbState2 = "---"
+var string pbState3 = "---"
 
 // ── Swing1 ──
 var bool   ssb_findingMin1 = true
@@ -168,70 +182,50 @@ var int    prevPeakIdx2    = na
 var int    prevBot2ndIdx2  = na
 var int    prevPeak2ndIdx2 = na
 
-// ── ストラテジー状態 ──
-var int   longEntryCount  = 0    // SW2同一上昇波動内のLONGエントリー回数
-var int   shortEntryCount = 0    // SW2同一下落波動内のSHORTエントリー回数
-var string prevPbState2   = "---" // SW2波動の前回状態（変化検出用）
+// ── Swing3 ──
+var bool   ssb_findingMin3 = true
+var bool   ssb_findingMax3 = false
+var float  ssb_minPrice3 = na
+var int    ssb_minIdx3   = na
+var float  ssb_maxPrice3 = na
+var int    ssb_maxIdx3   = na
+var array<float> peakPx3 = array.new<float>()
+var array<int>   peakIx3 = array.new<int>()
+var array<float> botPx3  = array.new<float>()
+var array<int>   botIx3  = array.new<int>()
+var float  prevPeak3    = na
+var float  prevBot3     = na
+var float  prevPeak2nd3 = na
+var float  prevBot2nd3  = na
+var bool   peakFalling3 = false
+var bool   botRising3   = false
+var float  oshiYasune3       = na
+var bool   oshiBroken3       = false
+var bool   oshiBreakSignal3  = false
+var int    oshiYasuneIdx3    = na
+var float  modoriTakane3     = na
+var bool   modoriBroken3     = false
+var bool   modoriBreakSignal3 = false
+var int    modoriTakaneIdx3  = na
+var float  modoriPrevPeak3   = na
+var bool   b1_broken3 = false
+var bool   p1_broken3 = false
+var int    prevBotIdx3     = na
+var int    prevPeakIdx3    = na
+var int    prevBot2ndIdx3  = na
+var int    prevPeak2ndIdx3 = na
+
+// ── エントリースタンバイ状態 ──
+var bool  longStandby      = false   // SW3 PB1 Long後のスタンバイ
+var bool  shortStandby     = false   // SW3 P1 Short後のスタンバイ
+var int   longEntryCount   = 0       // 現スタンバイ内のLONGエントリー回数
+var int   shortEntryCount  = 0       // 現スタンバイ内のSHORTエントリー回数
 
 // ── ゾーン配列 ──
-var array<box>    dowZoneBoxes1     = array.new<box>()
-var array<string> dowZoneTypes1     = array.new<string>()
-var array<float>  dowZoneTops1      = array.new<float>()
-var array<float>  dowZoneBottoms1   = array.new<float>()
-var array<int>    dowZoneStartBars1 = array.new<int>()
-var array<box>    dowZoneBoxes2     = array.new<box>()
-var array<string> dowZoneTypes2     = array.new<string>()
-var array<float>  dowZoneTops2      = array.new<float>()
-var array<float>  dowZoneBottoms2   = array.new<float>()
-var array<int>    dowZoneStartBars2 = array.new<int>()
 
 // ══════════════════════════════════════════════════════════════
 // ヘルパー関数
 // ══════════════════════════════════════════════════════════════
-f_addDowZone1(int startBar, float top, float bottom, string zoneType) =>
-    if showDowZone1
-        if array.size(dowZoneBoxes1) >= dowZoneMaxCount1
-            box oldBox = array.shift(dowZoneBoxes1)
-            array.shift(dowZoneTypes1)
-            array.shift(dowZoneTops1)
-            array.shift(dowZoneBottoms1)
-            array.shift(dowZoneStartBars1)
-            box.delete(oldBox)
-        box newBox = box.new(startBar, top, startBar + dowZoneExtendBars1, bottom,
-             border_color=color.new(dowZone1Color, 50), bgcolor=dowZone1Color, border_width=1)
-        array.push(dowZoneBoxes1, newBox)
-        array.push(dowZoneTypes1, zoneType)
-        array.push(dowZoneTops1, top)
-        array.push(dowZoneBottoms1, bottom)
-        array.push(dowZoneStartBars1, startBar)
-
-f_addDowZone2(int startBar, float top, float bottom, string zoneType) =>
-    if showDowZone2
-        if array.size(dowZoneBoxes2) >= dowZoneMaxCount2
-            box oldBox = array.shift(dowZoneBoxes2)
-            array.shift(dowZoneTypes2)
-            array.shift(dowZoneTops2)
-            array.shift(dowZoneBottoms2)
-            array.shift(dowZoneStartBars2)
-            box.delete(oldBox)
-        box newBox = box.new(startBar, top, startBar + dowZoneExtendBars2, bottom,
-             border_color=color.new(dowZone2Color, 50), bgcolor=dowZone2Color, border_width=1)
-        array.push(dowZoneBoxes2, newBox)
-        array.push(dowZoneTypes2, zoneType)
-        array.push(dowZoneTops2, top)
-        array.push(dowZoneBottoms2, bottom)
-        array.push(dowZoneStartBars2, startBar)
-
-f_updateDowZones() =>
-    if showDowZone1 and array.size(dowZoneBoxes1) > 0
-        for i = 0 to array.size(dowZoneBoxes1) - 1
-            box b = array.get(dowZoneBoxes1, i)
-            box.set_right(b, bar_index + 10)
-    if showDowZone2 and array.size(dowZoneBoxes2) > 0
-        for i = 0 to array.size(dowZoneBoxes2) - 1
-            box b = array.get(dowZoneBoxes2, i)
-            box.set_right(b, bar_index + 10)
-
 f_calcTrendStatus(array<float> peaks, array<float> bots) =>
     string result = "FLAT"
     if array.size(peaks) >= 2 and array.size(bots) >= 2
@@ -326,11 +320,32 @@ if bottomCondition2
 else
     bottomFlag2 := na
 
+
+peakCondition3   = low < ta.lowest(low, length3)[1] and lastPBSignal3 != "peak"
+bottomCondition3 = high > ta.highest(high, length3)[1] and lastPBSignal3 != "bottom"
+var float peakFlag3   = na
+var float bottomFlag3 = na
+if peakCondition3
+    peakFlag3     := 1
+    lastPBSignal3 := "peak"
+    pbState3      := "下落波動"
+else
+    peakFlag3 := na
+if bottomCondition3
+    bottomFlag3   := 1
+    lastPBSignal3 := "bottom"
+    pbState3      := "上昇波動"
+else
+    bottomFlag3 := na
+
 // ── P&Bプロット ──
 plotshape(showPB1 and peakFlag1 ? high + sigOffset1 : na, "SW1 Peak", shape.triangledown, location.absolute, pbCol1Down, size=size.tiny)
 plotshape(showPB1 and bottomFlag1 ? low - sigOffset1 : na, "SW1 Bottom", shape.triangleup, location.absolute, pbCol1Up, size=size.tiny)
 plotshape(showPB2 and peakFlag2 ? high + sigOffset2 : na, "SW2 Peak", shape.diamond, location.absolute, pbCol2Down, size=size.tiny)
 plotshape(showPB2 and bottomFlag2 ? low - sigOffset2 : na, "SW2 Bottom", shape.diamond, location.absolute, pbCol2Up, size=size.tiny)
+sigOffset3     = atrValue * 1.1
+plotshape(showPB3 and peakFlag3 ? high + sigOffset3 : na, "SW3 Peak", shape.square, location.absolute, pbCol3Down, size=size.tiny)
+plotshape(showPB3 and bottomFlag3 ? low - sigOffset3 : na, "SW3 Bottom", shape.square, location.absolute, pbCol3Up, size=size.tiny)
 
 // ══════════════════════════════════════════════════════════════
 // ブレイク判定用の現在B1/P1取得
@@ -357,11 +372,24 @@ if array.size(peakPx2) >= 1
     last_P1_2    := array.get(peakPx2, array.size(peakPx2) - 1)
     last_P1_idx2 := array.get(peakIx2, array.size(peakIx2) - 1)
 
+
+var float last_B1_3 = na
+var float last_P1_3 = na
+var int   last_B1_idx3 = na
+var int   last_P1_idx3 = na
+if array.size(botPx3) >= 1
+    last_B1_3    := array.get(botPx3, array.size(botPx3) - 1)
+    last_B1_idx3 := array.get(botIx3, array.size(botIx3) - 1)
+if array.size(peakPx3) >= 1
+    last_P1_3    := array.get(peakPx3, array.size(peakPx3) - 1)
+    last_P1_idx3 := array.get(peakIx3, array.size(peakIx3) - 1)
+
 // ══════════════════════════════════════════════════════════════
 // ブレイク判定
 // ══════════════════════════════════════════════════════════════
 var string trend_status1_confirmed = "FLAT"
 var string trend_status2_confirmed = "FLAT"
+var string trend_status3_confirmed = "FLAT"
 
 if barstate.isconfirmed
     if not na(last_B1_1) and not b1_broken1
@@ -380,7 +408,14 @@ if barstate.isconfirmed
         if high > last_P1_2
             p1_broken2 := true
             trend_status2_confirmed := "FLAT"
-f_updateDowZones()
+    if not na(last_B1_3) and not b1_broken3
+        if low < last_B1_3
+            b1_broken3 := true
+            trend_status3_confirmed := "FLAT"
+    if not na(last_P1_3) and not p1_broken3
+        if high > last_P1_3
+            p1_broken3 := true
+            trend_status3_confirmed := "FLAT"
 
 // ══════════════════════════════════════════════════════════════
 // スイング検出 - Swing 1（リアルタイム）
@@ -427,7 +462,6 @@ if peak_conf1
                         int _mIdx1a = not na(modoriTakaneIdx1) ? modoriTakaneIdx1 : bar_index
                         line.new(_mIdx1a, modoriTakane1, bar_index + 50, modoriTakane1,
                              color=breakLevelBuyColor, width=2, style=line.style_solid)
-                    f_addDowZone1(bar_index, modoriTakane1, math.max(close, open), "buy")
                 peakFalling1           := false
                 modoriTakane1          := na
                 modoriTakaneIdx1       := na
@@ -482,7 +516,6 @@ if bottom_conf1
                         int _oIdx1a = not na(oshiYasuneIdx1) ? oshiYasuneIdx1 : bar_index
                         line.new(_oIdx1a, oshiYasune1, bar_index + 50, oshiYasune1,
                              color=breakLevelSellColor, width=2, style=line.style_solid)
-                    f_addDowZone1(bar_index, math.min(close, open), oshiYasune1, "sell")
                 botRising1             := false
                 oshiYasune1            := na
                 oshiYasuneIdx1         := na
@@ -561,8 +594,7 @@ if peak_conf2
                     if showBreakLevel2
                         int _mIdx2a = not na(modoriTakaneIdx2) ? modoriTakaneIdx2 : bar_index
                         line.new(_mIdx2a, modoriTakane2, bar_index + 100, modoriTakane2,
-                             color=breakLevelBuyColor, width=2, style=line.style_solid)
-                    f_addDowZone2(bar_index, modoriTakane2, math.max(close, open), "buy")
+                             color=breakLevelBuyColor2, width=2, style=line.style_solid)
                 peakFalling2     := false
                 modoriTakane2    := na
                 modoriTakaneIdx2 := na
@@ -608,8 +640,7 @@ if bottom_conf2
                     if showBreakLevel2
                         int _oIdx2a = not na(oshiYasuneIdx2) ? oshiYasuneIdx2 : bar_index
                         line.new(_oIdx2a, oshiYasune2, bar_index + 100, oshiYasune2,
-                             color=breakLevelSellColor, width=2, style=line.style_solid)
-                    f_addDowZone2(bar_index, math.min(close, open), oshiYasune2, "sell")
+                             color=breakLevelSellColor2, width=2, style=line.style_solid)
                 botRising2     := false
                 oshiYasune2    := na
                 oshiYasuneIdx2 := na
@@ -642,6 +673,121 @@ if not na(prevBot2) and not na(prevPeak2)
             modoriTakaneIdx2 := prevPeakIdx2
             modoriBroken2    := false
 
+
+// ══════════════════════════════════════════════════════════════
+// スイング検出 - Swing 3（リアルタイム）
+// ══════════════════════════════════════════════════════════════
+if ssb_findingMin3 and (na(ssb_minPrice3) or low < ssb_minPrice3)
+    ssb_minPrice3 := low
+    ssb_minIdx3   := bar_index
+if ssb_findingMax3 and (na(ssb_maxPrice3) or high > ssb_maxPrice3)
+    ssb_maxPrice3 := high
+    ssb_maxIdx3   := bar_index
+peak_conf3   = ssb_findingMax3 and low < ta.lowest(low, length3)[1]
+bottom_conf3 = ssb_findingMin3 and high > ta.highest(high, length3)[1]
+if peak_conf3
+    array.push(peakPx3, ssb_maxPrice3)
+    array.push(peakIx3, ssb_maxIdx3)
+    if array.size(peakPx3) > 2
+        array.shift(peakPx3)
+        array.shift(peakIx3)
+    if showSwing3
+        line.new(ssb_minIdx3, ssb_minPrice3, ssb_maxIdx3, ssb_maxPrice3, color=lineColor3, width=lineWidth3)
+    if showSwing3 and showPriceLabel3
+        label.new(ssb_maxIdx3, ssb_maxPrice3 + priceOffset, str.tostring(ssb_maxPrice3, "#.##"),
+             textcolor=lineColor3, style=label.style_none, size=size.normal)
+    trend_status3_confirmed := f_calcTrendStatus(peakPx3, botPx3)
+    if not na(prevPeak3)
+        if ssb_maxPrice3 > prevPeak3
+            if not na(prevBot3)
+                if na(oshiYasune3) or prevBot3 > oshiYasune3
+                    oshiYasune3     := prevBot3
+                    oshiYasuneIdx3  := prevBotIdx3
+                    oshiBroken3     := false
+            if ssb_maxPrice3 > prevPeak3 + noiseThreshold
+                if not na(modoriTakane3) and not modoriBroken3
+                    modoriBroken3      := true
+                    modoriBreakSignal3 := true
+                    if showBreakLevel3
+                        int _mIdx3a = not na(modoriTakaneIdx3) ? modoriTakaneIdx3 : bar_index
+                        line.new(_mIdx3a, modoriTakane3, bar_index + 200, modoriTakane3,
+                             color=breakLevelBuyColor3, width=3, style=line.style_solid)
+                peakFalling3     := false
+                modoriTakane3    := na
+                modoriTakaneIdx3 := na
+                modoriBroken3    := false
+                modoriPrevPeak3  := na
+        else if ssb_maxPrice3 < prevPeak3
+            peakFalling3 := true
+    prevPeak2ndIdx3 := prevPeakIdx3
+    prevPeak2nd3    := prevPeak3
+    prevPeakIdx3    := ssb_maxIdx3
+    prevPeak3       := ssb_maxPrice3
+    ssb_findingMax3 := false
+    ssb_findingMin3 := true
+    ssb_minPrice3   := low
+    ssb_minIdx3     := bar_index
+    p1_broken3      := false
+if bottom_conf3
+    array.push(botPx3, ssb_minPrice3)
+    array.push(botIx3, ssb_minIdx3)
+    if array.size(botPx3) > 2
+        array.shift(botPx3)
+        array.shift(botIx3)
+    if showSwing3
+        line.new(ssb_maxIdx3, ssb_maxPrice3, ssb_minIdx3, ssb_minPrice3, color=lineColor3, width=lineWidth3)
+    if showSwing3 and showPriceLabel3
+        label.new(ssb_minIdx3, ssb_minPrice3 - priceOffset, str.tostring(ssb_minPrice3, "#.##"),
+             textcolor=lineColor3, style=label.style_none, size=size.normal)
+    trend_status3_confirmed := f_calcTrendStatus(peakPx3, botPx3)
+    if not na(prevBot3)
+        if ssb_minPrice3 < prevBot3
+            if not na(prevPeak3)
+                if na(modoriTakane3) or prevPeak3 < modoriTakane3
+                    modoriTakane3    := prevPeak3
+                    modoriTakaneIdx3 := prevPeakIdx3
+                    modoriBroken3    := false
+                    modoriPrevPeak3  := prevPeak2nd3
+            if ssb_minPrice3 < prevBot3 - noiseThreshold
+                if not na(oshiYasune3) and not oshiBroken3
+                    oshiBroken3      := true
+                    oshiBreakSignal3 := true
+                    if showBreakLevel3
+                        int _oIdx3a = not na(oshiYasuneIdx3) ? oshiYasuneIdx3 : bar_index
+                        line.new(_oIdx3a, oshiYasune3, bar_index + 200, oshiYasune3,
+                             color=breakLevelSellColor3, width=3, style=line.style_solid)
+                botRising3     := false
+                oshiYasune3    := na
+                oshiYasuneIdx3 := na
+                oshiBroken3    := false
+        else if ssb_minPrice3 > prevBot3
+            botRising3 := true
+    prevBot2ndIdx3  := prevBotIdx3
+    prevBot2nd3     := prevBot3
+    prevBotIdx3     := ssb_minIdx3
+    prevBot3        := ssb_minPrice3
+    ssb_findingMin3 := false
+    ssb_findingMax3 := true
+    ssb_maxPrice3   := high
+    ssb_maxIdx3     := bar_index
+    b1_broken3      := false
+
+// ══════════════════════════════════════════════════════════════
+// SW3 押し安値・戻り高値 リアルタイム更新
+// ══════════════════════════════════════════════════════════════
+if not na(prevPeak3) and not na(prevBot3)
+    if high > prevPeak3
+        if na(oshiYasune3) or prevBot3 > oshiYasune3
+            oshiYasune3    := prevBot3
+            oshiYasuneIdx3 := prevBotIdx3
+            oshiBroken3    := false
+if not na(prevBot3) and not na(prevPeak3)
+    if low < prevBot3
+        if na(modoriTakane3) or prevPeak3 < modoriTakane3
+            modoriTakane3    := prevPeak3
+            modoriTakaneIdx3 := prevPeakIdx3
+            modoriBroken3    := false
+
 // ══════════════════════════════════════════════════════════════
 // 押し安値・戻り高値ブレイク判定 + ゾーン作成 (close ベース)
 // ══════════════════════════════════════════════════════════════
@@ -649,6 +795,8 @@ oshiBreakSignal1   := false
 modoriBreakSignal1 := false
 oshiBreakSignal2   := false
 modoriBreakSignal2 := false
+oshiBreakSignal3   := false
+modoriBreakSignal3 := false
 
 if barstate.isconfirmed
     // ── SW1 押し安値ブレイク ──
@@ -661,7 +809,6 @@ if barstate.isconfirmed
                 int startIdx = not na(oshiYasuneIdx1) ? oshiYasuneIdx1 : bar_index
                 line.new(startIdx, oshiYasune1, bar_index + 50, oshiYasune1,
                      color=breakLevelSellColor, width=2, style=line.style_solid)
-            f_addDowZone1(bar_index, math.min(close, open), oshiYasune1, "sell")
     // ── SW1 戻り高値ブレイク ──
     if not na(modoriTakane1) and not modoriBroken1
         if close > modoriTakane1
@@ -672,7 +819,6 @@ if barstate.isconfirmed
                 int startIdx = not na(modoriTakaneIdx1) ? modoriTakaneIdx1 : bar_index
                 line.new(startIdx, modoriTakane1, bar_index + 50, modoriTakane1,
                      color=breakLevelBuyColor, width=2, style=line.style_solid)
-            f_addDowZone1(bar_index, modoriTakane1, math.max(close, open), "buy")
     // ── SW2 押し安値ブレイク ──
     if not na(oshiYasune2) and not oshiBroken2
         if close < oshiYasune2
@@ -682,8 +828,7 @@ if barstate.isconfirmed
             if showBreakLevel2
                 int startIdx2 = not na(oshiYasuneIdx2) ? oshiYasuneIdx2 : bar_index
                 line.new(startIdx2, oshiYasune2, bar_index + 100, oshiYasune2,
-                     color=breakLevelSellColor, width=2, style=line.style_solid)
-            f_addDowZone2(bar_index, math.min(close, open), oshiYasune2, "sell")
+                     color=breakLevelSellColor2, width=2, style=line.style_solid)
     // ── SW2 戻り高値ブレイク ──
     if not na(modoriTakane2) and not modoriBroken2
         if close > modoriTakane2
@@ -693,8 +838,28 @@ if barstate.isconfirmed
             if showBreakLevel2
                 int startIdx2 = not na(modoriTakaneIdx2) ? modoriTakaneIdx2 : bar_index
                 line.new(startIdx2, modoriTakane2, bar_index + 100, modoriTakane2,
-                     color=breakLevelBuyColor, width=2, style=line.style_solid)
-            f_addDowZone2(bar_index, modoriTakane2, math.max(close, open), "buy")
+                     color=breakLevelBuyColor2, width=2, style=line.style_solid)
+
+    // ── SW3 押し安値ブレイク ──
+    if not na(oshiYasune3) and not oshiBroken3
+        if close < oshiYasune3
+            oshiBroken3      := true
+            botRising3       := false
+            oshiBreakSignal3 := true
+            if showBreakLevel3
+                int startIdx3 = not na(oshiYasuneIdx3) ? oshiYasuneIdx3 : bar_index
+                line.new(startIdx3, oshiYasune3, bar_index + 200, oshiYasune3,
+                     color=breakLevelSellColor3, width=3, style=line.style_solid)
+    // ── SW3 戻り高値ブレイク ──
+    if not na(modoriTakane3) and not modoriBroken3
+        if close > modoriTakane3
+            modoriBroken3      := true
+            peakFalling3       := false
+            modoriBreakSignal3 := true
+            if showBreakLevel3
+                int startIdx3 = not na(modoriTakaneIdx3) ? modoriTakaneIdx3 : bar_index
+                line.new(startIdx3, modoriTakane3, bar_index + 200, modoriTakane3,
+                     color=breakLevelBuyColor3, width=3, style=line.style_solid)
 
 // ══════════════════════════════════════════════════════════════
 // 直近B1/P1ライン表示
@@ -703,6 +868,8 @@ var line b1_line1 = na
 var line p1_line1 = na
 var line b1_line2 = na
 var line p1_line2 = na
+var line b1_line3 = na
+var line p1_line3 = na
 if not na(b1_line1)
     line.delete(b1_line1)
 if not na(p1_line1)
@@ -711,6 +878,10 @@ if not na(b1_line2)
     line.delete(b1_line2)
 if not na(p1_line2)
     line.delete(p1_line2)
+if not na(b1_line3)
+    line.delete(b1_line3)
+if not na(p1_line3)
+    line.delete(p1_line3)
 if showB1P1Lines1 and not na(last_B1_1)
     b1_line1 := line.new(last_B1_idx1, last_B1_1, bar_index + 20, last_B1_1,
          color=color.new(lineColor1, 50), width=1, style=line.style_dashed)
@@ -723,6 +894,12 @@ if showB1P1Lines2 and not na(last_B1_2)
 if showB1P1Lines2 and not na(last_P1_2)
     p1_line2 := line.new(last_P1_idx2, last_P1_2, bar_index + 20, last_P1_2,
          color=color.new(lineColor2, 50), width=1, style=line.style_dashed)
+if showB1P1Lines3 and not na(last_B1_3)
+    b1_line3 := line.new(last_B1_idx3, last_B1_3, bar_index + 20, last_B1_3,
+         color=color.new(lineColor3, 50), width=1, style=line.style_dashed)
+if showB1P1Lines3 and not na(last_P1_3)
+    p1_line3 := line.new(last_P1_idx3, last_P1_3, bar_index + 20, last_P1_3,
+         color=color.new(lineColor3, 50), width=1, style=line.style_dashed)
 
 // ══════════════════════════════════════════════════════════════
 // 押し安値・戻り高値 水平線表示
@@ -731,6 +908,8 @@ var line oshiLine1    = na
 var line modoriLine1  = na
 var line oshiLine2    = na
 var line modoriLine2  = na
+var line oshiLine3    = na
+var line modoriLine3  = na
 if not na(oshiLine1)
     line.delete(oshiLine1)
 if not na(modoriLine1)
@@ -739,6 +918,10 @@ if not na(oshiLine2)
     line.delete(oshiLine2)
 if not na(modoriLine2)
     line.delete(modoriLine2)
+if not na(oshiLine3)
+    line.delete(oshiLine3)
+if not na(modoriLine3)
+    line.delete(modoriLine3)
 if not na(oshiYasune1) and not oshiBroken1
     oshiLine1 := line.new(nz(oshiYasuneIdx1, bar_index), oshiYasune1, bar_index + 20, oshiYasune1,
          color=color.new(oshiBreakColor, 30), width=2, style=line.style_dotted)
@@ -751,12 +934,19 @@ if not na(oshiYasune2) and not oshiBroken2
 if not na(modoriTakane2) and not modoriBroken2
     modoriLine2 := line.new(nz(modoriTakaneIdx2, bar_index - 50), modoriTakane2, bar_index + 20, modoriTakane2,
          color=color.new(modoriBreakColor, 50), width=2, style=line.style_solid)
+if not na(oshiYasune3) and not oshiBroken3
+    oshiLine3 := line.new(nz(oshiYasuneIdx3, bar_index - 100), oshiYasune3, bar_index + 20, oshiYasune3,
+         color=color.new(oshiBreakColor, 70), width=3, style=line.style_solid)
+if not na(modoriTakane3) and not modoriBroken3
+    modoriLine3 := line.new(nz(modoriTakaneIdx3, bar_index - 100), modoriTakane3, bar_index + 20, modoriTakane3,
+         color=color.new(modoriBreakColor, 70), width=3, style=line.style_solid)
 
 // ══════════════════════════════════════════════════════════════
 // リアルタイムトレンド判定
 // ══════════════════════════════════════════════════════════════
 string trend_status1 = f_calcRealtimeTrendStatus(peakPx1, botPx1, trend_status1_confirmed)
 string trend_status2 = f_calcRealtimeTrendStatus(peakPx2, botPx2, trend_status2_confirmed)
+string trend_status3 = f_calcRealtimeTrendStatus(peakPx3, botPx3, trend_status3_confirmed)
 
 // ══════════════════════════════════════════════════════════════
 // 転換価格計算
@@ -765,6 +955,8 @@ float turnPrice1 = pbState1 == "上昇波動" ? ta.lowest(low, length1)[1] : ta.
 float turnPrice2 = pbState2 == "上昇波動" ? ta.lowest(low, length2)[1] : ta.highest(high, length2)[1]
 string turnDir1  = pbState1 == "上昇波動" ? "↓" : "↑"
 string turnDir2  = pbState2 == "上昇波動" ? "↓" : "↑"
+float turnPrice3 = pbState3 == "上昇波動" ? ta.lowest(low, length3)[1] : ta.highest(high, length3)[1]
+string turnDir3  = pbState3 == "上昇波動" ? "↓" : "↑"
 
 // ══════════════════════════════════════════════════════════════
 // トレンドテーブル表示
@@ -783,7 +975,7 @@ if showTrendTable
         "bottom_right"  => position.bottom_right
         => position.top_right
     if na(trendTable)
-        trendTable := table.new(tablePos, 6, 3, border_width=1)
+        trendTable := table.new(tablePos, 6, 4, border_width=1)
     // ── row 0: ヘッダー ──
     table.cell(trendTable, 0, 0, "", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 1, 0, "トレンド", bgcolor=color.rgb(50, 50, 50), text_color=color.white, text_size=size.normal)
@@ -807,6 +999,11 @@ if showTrendTable
     string modoriText2 = not na(modoriTakane2) ? str.tostring(modoriTakane2, "#.##") + (modoriBroken2 ? " ✗" : " ●") : "---"
     color oshiColor2 = not na(oshiYasune2) and not oshiBroken2 ? color.rgb(0, 150, 0) : color.rgb(100, 100, 100)
     color modoriColor2 = not na(modoriTakane2) and not modoriBroken2 ? color.rgb(200, 0, 0) : color.rgb(100, 100, 100)
+    // ── 押安・戻高テキスト＆色（Swing3） ──
+    string oshiText3 = not na(oshiYasune3) ? str.tostring(oshiYasune3, "#.##") + (oshiBroken3 ? " ✗" : " ●") : "---"
+    string modoriText3 = not na(modoriTakane3) ? str.tostring(modoriTakane3, "#.##") + (modoriBroken3 ? " ✗" : " ●") : "---"
+    color oshiColor3 = not na(oshiYasune3) and not oshiBroken3 ? color.rgb(0, 150, 0) : color.rgb(100, 100, 100)
+    color modoriColor3 = not na(modoriTakane3) and not modoriBroken3 ? color.rgb(200, 0, 0) : color.rgb(100, 100, 100)
     // ── row 1: Swing1 ──
     color pb1Color = pbState1 == "上昇波動" ? color.rgb(0, 150, 0) : pbState1 == "下落波動" ? color.rgb(200, 0, 0) : color.rgb(100, 100, 100)
     table.cell(trendTable, 0, 1, "SW1", bgcolor=color.rgb(30, 80, 180), text_color=color.white, text_size=size.normal)
@@ -823,81 +1020,105 @@ if showTrendTable
     table.cell(trendTable, 3, 2, str.tostring(turnPrice2, "#.##") + " " + turnDir2, bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 4, 2, oshiText2, bgcolor=oshiColor2, text_color=color.white, text_size=size.normal)
     table.cell(trendTable, 5, 2, modoriText2, bgcolor=modoriColor2, text_color=color.white, text_size=size.normal)
+    // ── row 3: Swing3 ──
+    color pb3Color = pbState3 == "上昇波動" ? color.rgb(0, 150, 0) : pbState3 == "下落波動" ? color.rgb(200, 0, 0) : color.rgb(100, 100, 100)
+    table.cell(trendTable, 0, 3, "SW3", bgcolor=color.rgb(0, 50, 100), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 1, 3, f_trendToJapanese(trend_status3), bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 2, 3, pbState3, bgcolor=pb3Color, text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 3, 3, str.tostring(turnPrice3, "#.##") + " " + turnDir3, bgcolor=color.rgb(70, 70, 70), text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 4, 3, oshiText3, bgcolor=oshiColor3, text_color=color.white, text_size=size.normal)
+    table.cell(trendTable, 5, 3, modoriText3, bgcolor=modoriColor3, text_color=color.white, text_size=size.normal)
 
 // ══════════════════════════════════════════════════════════════
-// ストラテジー: SW2波動変化でエントリー回数リセット
+// ストラテジー: スタンバイ → エントリー
+// SW3 PB1 → スタンバイON → SW2 PB1 → エントリー
 // ══════════════════════════════════════════════════════════════
-if pbState2 != prevPbState2
-    if pbState2 == "上昇波動"
-        longEntryCount  := 0    // SW2が上昇波動に転換 → LONGカウントリセット
-    if pbState2 == "下落波動"
-        shortEntryCount := 0    // SW2が下落波動に転換 → SHORTカウントリセット
-    prevPbState2 := pbState2
 
-// ══════════════════════════════════════════════════════════════
-// ストラテジー: エントリー条件
-// ══════════════════════════════════════════════════════════════
-atrEntry = ta.atr(14)
-int maxEntryPerWave = 2
+// ── スタンバイ制御 ──
+// SW3 PB1 Long → ロングスタンバイON（カウントリセット）/ SW3 P1でキャンセル
+if bottomCondition3
+    longStandby    := true
+    longEntryCount := 0
+    shortStandby   := false
+if peakCondition3
+    shortStandby    := true
+    shortEntryCount := 0
+    longStandby     := false
 
-// ── LONG条件 ──
-// SW2 = 上昇トレンド + 上昇波動 の中で
-// SW1 = 上昇トレンド + PB1(上昇波動開始) → エントリー（同一SW2波動内で最大2回）
-sw2LongReady = trend_status2 == "UP" and pbState2 == "上昇波動"
-sw1LongTrigger = trend_status1 == "UP" and bottomCondition1
-
-longSignal = sw2LongReady
-             and sw1LongTrigger
-             and longEntryCount < maxEntryPerWave
-             and (tradeDir == "Both" or tradeDir == "Long Only")
-             and time >= startDate and time <= endDate
+// ── LONG エントリー ──
+longSignal = longStandby and bottomCondition2 and longEntryCount < maxEntryPerStandby
 
 if longSignal
     longEntryCount += 1
 
-// ── SHORT条件 ──
-// SW2 = 下降トレンド + 下落波動 の中で
-// SW1 = 下降トレンド + P1(下落波動開始) → エントリー（同一SW2波動内で最大2回）
-sw2ShortReady = trend_status2 == "DOWN" and pbState2 == "下落波動"
-sw1ShortTrigger = trend_status1 == "DOWN" and peakCondition1
-
-shortSignal = sw2ShortReady
-              and sw1ShortTrigger
-              and shortEntryCount < maxEntryPerWave
-              and (tradeDir == "Both" or tradeDir == "Short Only")
-              and time >= startDate and time <= endDate
+// ── SHORT エントリー ──
+shortSignal = shortStandby and peakCondition2 and shortEntryCount < maxEntryPerStandby
 
 if shortSignal
     shortEntryCount += 1
 
+// ── LC / TP 計算 ──
+float longLC  = na
+float longTP  = na
+float shortLC = na
+float shortTP = na
+
+if longSignal
+    if lcMethod == "前足安値/高値"
+        longLC := low[1] - lcBuffer
+    else
+        longLC := (not na(prevBot2) ? prevBot2 : low[1]) - lcBuffer
+    float risk = close - longLC
+    longTP := close + risk * rrRatio
+
+if shortSignal
+    if lcMethod == "前足安値/高値"
+        shortLC := high[1] + lcBuffer
+    else
+        shortLC := (not na(prevPeak2) ? prevPeak2 : high[1]) + lcBuffer
+    float risk = shortLC - close
+    shortTP := close - risk * rrRatio
+
 // ══════════════════════════════════════════════════════════════
-// シグナルラベル表示 (インジケーター版)
+// シグナルラベル表示
 // ══════════════════════════════════════════════════════════════
 if longSignal and showEntryLabel
-    stopLong  = prevBot1 - atrEntry * lcBufferATR
-    tpLong    = close + (close - stopLong) * rrRatio
-    label.new(bar_index, low - sigOffset1 * 3,
-         "▲ DT Long(" + str.tostring(longEntryCount) + "/" + str.tostring(maxEntryPerWave) + ")\nLC:" + str.tostring(stopLong, "#") + "\nTP:" + str.tostring(tpLong, "#"),
+    label.new(bar_index, low - atrValue * 0.5,
+         "▲ Long(" + str.tostring(longEntryCount) + "/" + str.tostring(maxEntryPerStandby) + ")\nLC:" + str.tostring(longLC, "#") + "\nTP:" + str.tostring(longTP, "#"),
          style=label.style_label_up, color=color.new(color.teal, 20),
          textcolor=color.white, size=size.small)
 
 if shortSignal and showEntryLabel
-    stopShort = prevPeak1 + atrEntry * lcBufferATR
-    tpShort   = close - (stopShort - close) * rrRatio
-    label.new(bar_index, high + sigOffset1 * 3,
-         "▼ DT Short(" + str.tostring(shortEntryCount) + "/" + str.tostring(maxEntryPerWave) + ")\nLC:" + str.tostring(stopShort, "#") + "\nTP:" + str.tostring(tpShort, "#"),
+    label.new(bar_index, high + atrValue * 0.5,
+         "▼ Short(" + str.tostring(shortEntryCount) + "/" + str.tostring(maxEntryPerStandby) + ")\nLC:" + str.tostring(shortLC, "#") + "\nTP:" + str.tostring(shortTP, "#"),
          style=label.style_label_down, color=color.new(color.red, 20),
          textcolor=color.white, size=size.small)
 
-plotshape(showEntryLabel and longSignal, "DT Long", shape.labelup, location.belowbar, color.new(color.teal, 0), size=size.tiny)
-plotshape(showEntryLabel and shortSignal, "DT Short", shape.labeldown, location.abovebar, color.new(color.red, 0), size=size.tiny)
+// ── スタンバイ表示（背景色） ──
+bgcolor(longStandby and not shortStandby ? color.new(color.teal, 95) : na, title="Longスタンバイ")
+bgcolor(shortStandby and not longStandby ? color.new(color.red, 95) : na, title="Shortスタンバイ")
+
+plotshape(showEntryLabel and longSignal,  "Entry Long",  shape.labelup,   location.belowbar, color.new(color.teal, 0), size=size.tiny)
+plotshape(showEntryLabel and shortSignal, "Entry Short", shape.labeldown, location.abovebar, color.new(color.red, 0),  size=size.tiny)
 
 // ══════════════════════════════════════════════════════════════
-// アラート
+// アラート: エントリーシグナル
 // ══════════════════════════════════════════════════════════════
-alertcondition(longSignal,  "DT Long シグナル",  "Dow Theory Long: SW2上昇トレンド上昇波動 + SW1上昇トレンドPB1")
-alertcondition(shortSignal, "DT Short シグナル", "Dow Theory Short: SW2下降トレンド下落波動 + SW1下降トレンドP1")
+alertcondition(longSignal,  "Entry Long",  "Entry Long: SW3スタンバイ + SW2 PB1")
+alertcondition(shortSignal, "Entry Short", "Entry Short: SW3スタンバイ + SW2 P1")
+
+// ── PB1/P1 シグナルアラート（SW1/SW2/SW3 個別選択可） ──
+alertcondition(alertPB1Long  and bottomCondition1, "SW1 PB1 Long",  "SW1 PB1 Long（上昇波動開始）")
+alertcondition(alertPB1Short and peakCondition1,   "SW1 P1 Short",  "SW1 P1 Short（下落波動開始）")
+alertcondition(alertPB2Long  and bottomCondition2, "SW2 PB1 Long",  "SW2 PB1 Long（上昇波動開始）")
+alertcondition(alertPB2Short and peakCondition2,   "SW2 P1 Short",  "SW2 P1 Short（下落波動開始）")
+alertcondition(alertPB3Long  and bottomCondition3, "SW3 PB1 Long",  "SW3 PB1 Long（上昇波動開始）")
+alertcondition(alertPB3Short and peakCondition3,   "SW3 P1 Short",  "SW3 P1 Short（下落波動開始）")
+
+// ── ブレイクアラート ──
 alertcondition(oshiBreakSignal1, "SW1 押し安値ブレイク", "SW1 押し安値ブレイク")
 alertcondition(modoriBreakSignal1, "SW1 戻り高値ブレイク", "SW1 戻り高値ブレイク")
 alertcondition(oshiBreakSignal2, "SW2 押し安値ブレイク", "SW2 押し安値ブレイク")
 alertcondition(modoriBreakSignal2, "SW2 戻り高値ブレイク", "SW2 戻り高値ブレイク")
+alertcondition(oshiBreakSignal3, "SW3 押し安値ブレイク", "SW3 押し安値ブレイク")
+alertcondition(modoriBreakSignal3, "SW3 戻り高値ブレイク", "SW3 戻り高値ブレイク")
